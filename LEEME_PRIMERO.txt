@@ -1,0 +1,18 @@
+FÚTBOL ÚNICO — VERSIÓN OFICIAL PÚBLICA
+
+Este paquete está preparado para publicación estática en Cloudflare Pages (Direct Upload).
+
+Contenido principal:
+- Inicio público con acceso al Reglamento oficial.
+- Práctica libre con selección de camisetas de los clubes de Torneo y edición de colores/diseños.
+- Torneo Argentino con clubes, temporada, fixtures y resultados.
+- Cartel de entretiempo y cartel de final del partido.
+- Los motores de Práctica y Torneo permanecen idénticos.
+
+No se muestra la consola de auditoría ni el selector técnico de perfiles de CPU en la interfaz pública.
+La CPU conserva su comportamiento automático y las identidades tácticas asignadas a los rivales.
+
+Publicación: subí el contenido completo de este ZIP a Cloudflare Pages. Deben conservarse las carpetas baseline, los archivos de escudos, index.html, styles.css y app.js.
+
+
+Corrección v96.5.5: los accesos internos Inicio → Práctica/Torneo se capturan leyendo el parámetro ?page antes de resolver la ruta; esto impide abrir una copia anidada del portal y evita la duplicación de la navegación.

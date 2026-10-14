@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <meta name="theme-color" content="#06080c" />
+  <meta name="description" content="Fútbol Único: fútbol táctico por turnos, práctica libre y torneo argentino." />
+  <title>Fútbol Único · Juego táctico de fútbol</title>
+  <link rel="stylesheet" href="./styles.css" />
+  <script src="./app.js" defer></script>
+</head>
+<body>
+  <div id="root" class="fu-shell">
+    <header class="fu-shell-header">
+      <button class="fu-brand" id="fuBrand" type="button" aria-label="Volver al inicio">
+        <span class="fu-brand-mark" aria-hidden="true">FU</span>
+        <span><strong>FÚTBOL ÚNICO</strong><small>Juego táctico de fútbol</small></span>
+      </button>
+      <nav class="fu-shell-nav" aria-label="Modos de juego">
+        <button type="button" data-page="home">Inicio</button>
+        <button type="button" data-page="practice">Práctica</button>
+        <button type="button" data-page="tournament">Torneo</button>
+      </nav>
+      <div class="fu-build-state" id="fuStatus" role="status" aria-live="polite">
+        <span id="fuStatusDot" aria-hidden="true"></span>
+        <div><strong id="fuStatusTitle">Preparando juego</strong><small id="fuStatusText">Cargando la base protegida y las mejoras v96.2.</small></div>
+      </div>
+    </header>
+    <main class="fu-game-stage" id="fuGameStage" aria-busy="true">
+      <div class="fu-loading" id="fuLoading" role="status">
+        <span class="fu-loading-pitch" aria-hidden="true"></span>
+        <strong id="fuLoadingTitle">Preparando Inicio</strong>
+        <small>Cargando el juego.</small>
+      </div>
+      <div class="fu-error" id="fuError" role="alert" hidden>
+        <span>FU / 96</span><h1>No se pudo cargar Fútbol Único</h1><p id="fuErrorText"></p>
+        <button type="button" id="fuRetry">Reintentar</button>
+      </div>
+    </main>
+  </div>
+</body>
+</html>
