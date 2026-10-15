@@ -2358,6 +2358,9 @@ const V98_AI_PATCH = String.raw`
   scored.sort((a,b)=>b.mean-a.mean);
   const best=scored[0];
   if(!fuV98Ai.variety)return best.key;
+  // Corrección 2e: la variedad solo se usa con la pelota en la CPU; sin la pelota decide la mejor defensa.
+  const holder=owner();
+  if(!holder||holder.t!==CPU_TEAM)return best.key;
   const near=scored.filter(s=>s.mean>=best.mean-fuV98Ai.varietyMargin);
   if(near.length<2)return best.key;
   // Azar del propio partido en el momento de decidir: no anticipa ninguna tirada de las jugadas.
@@ -2474,25 +2477,35 @@ const V98_AI_PATCH = String.raw`
   return tacticalCandidates().find(a=>sequenceActionKey(a)===pick)||null;
  };
  // ======== Etapa 2c ========
- // ---- 3. Anticipación defensiva: en el turno rival, la búsqueda incluye su opción más peligrosa ----
- // La lista corta de respuestas rivales sale de la heurística general; si la amenaza principal del poseedor
- // (remate, pase para remate o conducción para remate, según el mapa de amenazas de v96) no está, reemplaza
- // la última respuesta. La CPU no ve ninguna tirada futura: solo considera esa jugada posible del rival.
+ // ---- 3. Anticipación defensiva: en el turno rival, la búsqueda incluye su amenaza inmediata más peligrosa ----
+ // La lista corta de respuestas rivales sale de la heurística general. Si el rival tiene una amenaza que puede
+ // ejecutar en ese mismo turno (remate del poseedor, o pase a un compañero que todavía no jugó y conserva una acción
+ // para rematar) y no está en la lista, reemplaza la última respuesta, salvo que esa ya sea una amenaza igual o mayor.
+ // Corrección 2e: las "conducciones para rematar" del mapa de v96 no cuentan, porque el mismo jugador no puede
+ // conducir y rematar en un turno; tratarlas como inmediatas hacía que la búsqueda dejara de ver remates reales.
+ function fuV98ImmediateDanger(a,options,holder){
+  if(!a||a.playerId!==holder.id)return 0;
+  if(a.kind==='shoot')return Math.max(0,Number(a.goalProbability)||0);
+  if(a.kind==='pass'&&a.receiverId!=null){
+   if(playedThisTurn.indexOf(a.receiverId)>=0||actionNo>=ACTIONS_PER_TURN)return 0;
+   const option=options.find(o=>o.type==='pass-shot'&&o.receiverId===a.receiverId);
+   return option?option.probability:0;
+  }
+  return 0;
+ }
  function fuV98WithMostDangerous(shortlist,candidates){
   const holder=owner();
-  if(!holder||holder.t===CPU_TEAM||!shortlist.length)return shortlist;
-  const top=fuV96ThreatOptions(p,holder.id)[0];
-  if(!top||top.probability<0.12)return shortlist;
-  const mine=candidates.filter(a=>a.playerId===holder.id);
-  let match=null;
-  if(top.type==='direct')match=mine.filter(a=>a.kind==='shoot').sort((x,y)=>(y.goalProbability||0)-(x.goalProbability||0))[0]||null;
-  else if(top.type==='pass-shot')match=mine.find(a=>a.kind==='pass'&&a.receiverId===top.receiverId)||null;
-  else if(top.type==='carry-shot'){const cell=top.path&&top.path[0];match=cell?mine.find(a=>a.kind==='carry'&&a.to.c===cell.c&&a.to.r===cell.r)||null:null;}
-  if(!match)return shortlist;
-  const key=sequenceActionKey(match);
+  if(!holder||holder.t===CPU_TEAM||!shortlist.length||playedThisTurn.indexOf(holder.id)>=0)return shortlist;
+  const options=fuV96ThreatOptions(p,holder.id);
+  let best=null,bestDanger=0;
+  for(const a of candidates){const d=fuV98ImmediateDanger(a,options,holder);if(d>bestDanger){bestDanger=d;best=a;}}
+  if(!best||bestDanger<0.12)return shortlist;
+  const key=sequenceActionKey(best);
   if(shortlist.some(a=>sequenceActionKey(a)===key))return shortlist;
   const out=shortlist.slice();
-  if(out.length>=2)out[out.length-1]=match;else out.push(match);
+  if(out.length<2){out.push(best);return out;}
+  if(fuV98ImmediateDanger(out[out.length-1],options,holder)>=bestDanger)return shortlist;
+  out[out.length-1]=best;
   return out;
  }
  async function fuV98SearchSequenceNode(depth,rootTeam,goalDiff,alpha,beta,ctx){

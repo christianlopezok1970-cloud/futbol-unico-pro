@@ -77,3 +77,10 @@ de una disputa. Por eso un pase del 85% nunca se veía impreciso y una disputa d
 falta dos de cada tres veces. Ahora el valor pondera "pase completado al receptor" con precisión × (1 − intercepción) y
 "falta" con la probabilidad del reglamento (30% costado, 60% atrás); si falta una clase en las muestras, se evalúa con
 una semilla cuya primera tirada cae en esa clase.
+
+IA v98 · Fase 2e (corrección medida en el banco): con la fase 2c la CPU concedía más remates en situaciones
+defensivas. La causa estaba en la anticipación: el mapa de amenazas de v96 incluye "conducir y rematar", que el mismo
+jugador no puede hacer en un turno, y al anticiparla la búsqueda dejaba de ver remates reales. Ahora solo se anticipan
+amenazas ejecutables en ese turno (remate del poseedor o pase a un compañero que todavía no jugó y conserva una acción
+para rematar), y solo reemplazan una respuesta que no sea a su vez una amenaza igual o mayor. Además, la variedad
+entre jugadas equivalentes se usa solo con la pelota; en defensa la CPU elige siempre la mejor jugada.
