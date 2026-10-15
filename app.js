@@ -2543,6 +2543,99 @@ const V98_AI_PATCH = String.raw`
  // ================== FIN FÚTBOL ÚNICO v98 · IA (FASE 2) ==================
 `;
 
+// v98 · Fase 3 de IA: defensa de la CPU. Solo cambia cómo la CPU evalúa y elige entre acciones legales;
+// las reglas, las probabilidades, la resolución de las jugadas y el partido real no cambian.
+const V98_DEF_PATCH = String.raw`
+ // ==================== FÚTBOL ÚNICO v98 · DEFENSA DE LA CPU (FASE 3) ====================
+ // Diagnóstico con pruebas/banco-defensa-cpu.html (modo diagnóstico, posiciones reales con semillas fijas):
+ //  · Evaluación: un rival solo puede rematar en un turno que empieza con la pelota en su poder, y en ese turno sus
+ //    secuencias posibles son remate, pase y remate, o pase, pase y remate (cada jugador actúa una vez por turno).
+ //    La búsqueda modelaba ese turno con dos respuestas heurísticas y resolvía cada pase y cada remate con una sola
+ //    tirada por semilla: con las mismas semillas, un remate del 35% y uno del 15% solían dar el mismo resultado,
+ //    así que la CPU no distinguía una cobertura buena de una mala y a veces elegía la que dejaba más peligro.
+ //  · Selección: defendiendo, la raíz admitía solo dos movimientos elegidos por la heurística general; el movimiento
+ //    que más reducía el peligro muchas veces no llegaba a compararse.
+ //  · Faltas: la rama "falta" de una disputa se valoraba con una única muestra del tiro libre posterior.
+ const fuV98Def={enabled:true,boundary:true};
+ function fuV98DefOn(){return fuV98Def.enabled&&fuV98Ai.enabled;}
+
+ // ---- Amenaza inmediata: valor esperado de la mejor secuencia de gol del equipo que empieza su turno con la pelota ----
+ // Usa las mismas funciones del motor: precisión del pase, intercepción en la trayectoria, fuera de juego, probabilidad
+ // de gol con desvíos, bloqueo y atajada del arquero. No consume azar ni modifica el estado.
+ function fuV98DefThreat(team){
+  const out={p:0,type:'',first:null};
+  const holder=owner();
+  if(!holder||holder.t!==team)return out;
+  const from={c:holder.c,r:holder.r},goalC=team===1?C-1:0,dir=attackDir(team);
+  const rivals=p.filter(z=>z.t!==team).sort((a,b)=>dir>0?b.c-a.c:a.c-b.c);
+  const secondLast=rivals.length>=2?rivals[1]:null;
+  const shotMemo=new Map();
+  const offside=(cell,ballCell)=>{if((cell.c-ballCell.c)*dir<=0)return false;let n=0;for(const z of rivals)if((z.c-cell.c)*dir>=0)n++;return n<2;};
+  const shot=(n,cell)=>{const key=n+':'+cell.c+','+cell.r;let v=shotMemo.get(key);if(v===undefined){v=fuV96BestShot({id:-1,t:team,n,c:cell.c,r:cell.r},p,cell);shotMemo.set(key,v);}return v;};
+  // Igual que moveBall(): alcance, receptor adelantado, pase más allá del anteúltimo rival con un compañero adelantado,
+  // primera casilla bloqueada y riesgo de intercepción en la trayectoria.
+  const pass=(passer,a,cell,others)=>{
+   if(cheb(a,cell)>BALL_REACH(passer.n))return 0;
+   if(offside(cell,a))return 0;
+   if(secondLast&&(cell.c-secondLast.c)*dir>0&&others.some(z=>z.id!==passer.id&&offside(z,a)))return 0;
+   const prec=estimatedPassPrecision(passer,a,cell);if(!(prec>0))return 0;
+   const it=trajectoryInterceptionRisk(a,cell,team,p);if(it.blocked)return 0;
+   return prec*(1-it.risk);
+  };
+  const consider=(prob,type,first)=>{if(prob>out.p){out.p=prob;out.type=type;out.first=first;}};
+  const mates=p.filter(z=>z.t===team&&z.id!==holder.id),receivers=mates.filter(z=>z.n!==1);
+  if(restartPassOnlyId!==holder.id&&!kickoffPassRequired){const s=shot(holder.n,from);consider(s.probability,'remate',{kind:'shoot',playerId:holder.id,to:s.to});}
+  for(const r1 of receivers){
+   const c1={c:r1.c,r:r1.r},s1=pass(holder,from,c1,mates);if(s1<=0)continue;
+   consider(s1*shot(r1.n,c1).probability,'pase-remate',{kind:'pass',playerId:holder.id,receiverId:r1.id,to:c1});
+   const others=p.filter(z=>z.t===team&&z.id!==r1.id);
+   for(const r2 of receivers){
+    if(r2.id===r1.id)continue;
+    const c2={c:r2.c,r:r2.r},s2=pass(r1,c1,c2,others);if(s2<=0)continue;
+    consider(s1*s2*shot(r2.n,c2).probability,'pase-pase-remate',{kind:'pass',playerId:holder.id,receiverId:r1.id,to:c1});
+   }
+  }
+  return out;
+ }
+ // Factores de riesgo según marcador y tiempo (etapa 2a), con las mismas condiciones en que se aplican.
+ function fuV98DefRisk(){
+  const neutral={goalAgainst:1,threatAgainst:1};
+  if(!fuV98Ai.risk)return neutral;
+  const ctx=fuV98RiskContext();
+  if(ctx.urgency<=0||ctx.goalFor===1&&ctx.goalAgainst===1)return neutral;
+  return ctx;
+ }
+
+ // ======== Etapa 3a · evaluación: fin del turno de la CPU con la pelota en poder del rival ========
+ // En ese nodo la búsqueda ya no sortea el turno rival: valora la posición con la amenaza inmediata completa
+ // (valor esperado de la mejor secuencia del rival, con el valor de un gol que usa toda la búsqueda: 320 puntos)
+ // en lugar de la amenaza aproximada de la evaluación general (145 × remate o un pase-remate). Así una cobertura que
+ // baja la ocasión rival del 35% al 15% vale 64 puntos más, sin depender de la suerte de una tirada fija; y una falta
+ // cerca del área se valora con el peligro real del tiro libre que concede.
+ function fuV98DefBoundaryValue(rootTeam,goalDiff,holder){
+  const value=evaluateSequencePosition(rootTeam,goalDiff);
+  const ctx=fuV98DefRisk();
+  const approx=estimateAttackingThreat(p,holder.id).probability;
+  const full=fuV98DefThreat(holder.t).p;
+  return value+145*ctx.threatAgainst*approx-320*ctx.goalAgainst*full;
+ }
+ let fuV98DefBoundaryCount=0;
+ const fuV98DefPrevSearch=searchSequenceNode;
+ async function fuV98DefSearchSequenceNode(depth,rootTeam,goalDiff,alpha,beta,ctx){
+  if(fuV98DefOn()&&fuV98Def.boundary&&rootTeam===CPU_TEAM&&turn!==rootTeam&&actionNo===1&&!kickoffPassRequired){
+   const holder=owner();
+   if(holder&&holder.t===turn){
+    sequenceVisitedNodes++;ctx.nodes++;fuV98DefBoundaryCount++;
+    return {value:fuV98DefBoundaryValue(rootTeam,goalDiff,holder),pv:[]};
+   }
+  }
+  return fuV98DefPrevSearch(depth,rootTeam,goalDiff,alpha,beta,ctx);
+ }
+ searchSequenceNode=fuV98DefSearchSequenceNode;
+
+ // ================== FIN FÚTBOL ÚNICO v98 · DEFENSA (FASE 3) ==================
+`;
+
 (() => {
   "use strict";
   const BASELINE_COMMIT = "d62eae16f15984cdb4397b93d8c4a34e89392efd";
@@ -3011,14 +3104,21 @@ function ensureCpuProfiles(){if(!state)return;const seed=(state.selectedClubId||
       try { new Function(V98_AI_PATCH); aiPatch = V98_AI_PATCH; report.patches.push("sintaxis JavaScript v98 (IA fase 2) verificada"); }
       catch (error) { report.warnings.push(`La capa v98 de IA no superó el control de sintaxis y no se instaló: ${String(error)}`); }
     }
+    // Fase 3 de IA: defensa de la CPU. Requiere la IA de la fase 2; sin ella, la CPU defiende como antes.
+    let defPatch = "";
+    if (aiPatch) {
+      try { new Function(V98_DEF_PATCH); defPatch = V98_DEF_PATCH; report.patches.push("sintaxis JavaScript v98 (defensa de la CPU, fase 3) verificada"); }
+      catch (error) { report.warnings.push(`La capa v98 de defensa no superó el control de sintaxis y no se instaló: ${String(error)}`); }
+    }
     const finalIife = html.lastIndexOf("})();");
     if (finalIife < 0) { report.warnings.push("No se encontró el cierre del motor para instalar v96."); return html; }
     report.patches.push("motor táctico v96");
     if (engineFixes) report.patches.push("correcciones del motor v98");
     if (simCoherence) report.patches.push("simulación coherente de la CPU v98");
     if (aiPatch) report.patches.push("IA de la CPU v98 (fase 2)");
+    if (defPatch) report.patches.push("defensa de la CPU v98 (fase 3)");
     if (visualPatch) { report.visualLayer = true; report.patches.push("rediseño visual del partido v97"); }
-    return `${html.slice(0, finalIife)}\n${V96_ENGINE_PATCH}\n${engineFixes}\n${simCoherence}\n${aiPatch}\n${visualPatch}\n${html.slice(finalIife)}`;
+    return `${html.slice(0, finalIife)}\n${V96_ENGINE_PATCH}\n${engineFixes}\n${simCoherence}\n${aiPatch}\n${defPatch}\n${visualPatch}\n${html.slice(finalIife)}`;
   }
   async function loadGamePage(requestedPage) {
     const sourcePath = PAGE_PATHS[requestedPage];
