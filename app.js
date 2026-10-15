@@ -522,6 +522,37 @@ html.fu97 body.tournament-match #app .fu97-kits-body label.ctrl{display:none!imp
 .fu97 #app .board:fullscreen .goal-celebration-overlay,.fu97 #app .board:-webkit-full-screen .goal-celebration-overlay{position:fixed!important}
 
 /* ---------------------------------------------------------------- tabletas y portátiles chicos */
+/* ---------------------------------------------------------------- v97.1 · banderines, canto de fichas, posesión y cartel de jugadas */
+.fu97 #field .fu97-tk-hit{fill:transparent;stroke:none}
+.fu97 #field .fu97-tk-edge,.fu97 #field .fu97-tk-edge-dk{pointer-events:none}
+.fu97 #field .fu97-tk-edge-dk{fill:#000;fill-opacity:.42}
+.fu97 #field .fu97-flag-pole{stroke:#f2f5f0;stroke-width:2.6;stroke-linecap:round}
+.fu97 #field .fu97-flag-cloth{fill:#ffd23d;stroke:#a26d00;stroke-width:1;stroke-linejoin:round}
+.fu97 #field .fu97-flag-base{fill:#f2f5f0;stroke:rgba(0,0,0,.35);stroke-width:1}
+.fu97 #app .fu97-sb-result{position:relative}
+.fu97 #app .fu97-sb-result::after{content:"";position:absolute;bottom:0;left:0;width:50%;height:3px;background:var(--k-lime);box-shadow:0 0 8px rgba(200,255,46,.55);opacity:0;transition:left .3s ease,opacity .2s ease;pointer-events:none}
+.fu97 #app .fu97-sb-result[data-poss="1"]::after{left:0;opacity:1}
+.fu97 #app .fu97-sb-result[data-poss="2"]::after{left:50%;opacity:1}
+.fu97 #app .fu97-banner{position:absolute;z-index:6;top:12px;left:50%;display:flex;flex-direction:column;align-items:center;gap:3px;max-width:min(80%,520px);padding:9px 20px 10px;border-radius:12px;background:rgba(6,10,15,.9);border:1px solid rgba(255,255,255,.12);box-shadow:0 12px 30px rgba(0,0,0,.45);opacity:0;visibility:hidden;transform:translate(-50%,-14px);transition:opacity .22s ease,transform .32s cubic-bezier(.2,.9,.3,1.15),visibility 0s linear .32s;pointer-events:none}
+.fu97 #app .fu97-banner.is-on{opacity:1;visibility:visible;transform:translate(-50%,0);transition-delay:0s}
+.fu97 #app .fu97-banner::before{content:"";position:absolute;left:16px;right:16px;top:-1px;height:3px;border-radius:0 0 3px 3px;background:var(--fu97-banner-c,var(--k-cyan))}
+.fu97 #app .fu97-banner b{color:var(--fu97-banner-c,var(--k-cyan));font:950 15px/1.1 var(--k-font);letter-spacing:.12em;white-space:nowrap}
+.fu97 #app .fu97-banner span{max-width:100%;overflow:hidden;color:var(--k-soft);font:650 11.5px/1.3 var(--k-font);text-align:center;text-overflow:ellipsis;white-space:nowrap}
+.fu97 #app .fu97-banner em{font-style:normal}
+.fu97 #app .fu97-banner[data-kind="event"]{--fu97-banner-c:var(--k-amber)}
+.fu97 #app .fu97-banner[data-kind="period"]{--fu97-banner-c:var(--k-lime)}
+@media (max-width:680px){
+ /* En el celular, una sola línea pegada al borde: así no tapa al arquero rival en la cancha vertical. */
+ .fu97 #app .fu97-banner{top:4px;max-width:92%;flex-direction:row;align-items:baseline;gap:7px;padding:4px 11px 5px;border-radius:9px}
+ .fu97 #app .fu97-banner b{font-size:12px}
+ .fu97 #app .fu97-banner span{font-size:10.5px}
+ .fu97 #app .fu97-banner span::before{content:"·";margin-right:7px;opacity:.55}
+ .fu97 #app .fu97-banner .fu97-banner-more{display:none}
+}
+@media (prefers-reduced-motion:reduce){
+ .fu97 #app .fu97-banner{transform:translate(-50%,0);transition:opacity .2s ease,visibility 0s linear .2s}
+ .fu97 #app .fu97-sb-result::after{transition:none}
+}
 @media (max-width:1599.98px){
  .fu97 #app .fu97-nav-label{display:none}
  .fu97 #app .fu97-nav a{padding:0 15px!important}
@@ -686,9 +717,10 @@ const V97_MATCH_PATCH = String.raw`
  const VB={x:-95,y:-30,w:1990,h:1160};
  let vertical=false;
  // En la cancha vertical el SVG gira -90°; fichas, balón y etiquetas giran +90° para quedar derechas.
- const upT=big=>vertical?(big?'rotate(90) scale(1.1)':'rotate(90)'):null;
+ // El balón se agranda en la cancha vertical del celular para que se distinga bien.
+ const upT=(big,ball)=>vertical?(ball?'rotate(90) scale(1.38)':big?'rotate(90) scale(1.1)':'rotate(90)'):null;
  function upGroup(parent,big,cls){const g=svg('g',{class:'fu97-up'+(cls?' '+cls:''),transform:upT(big)},parent);if(big)g.dataset.big='1';return g;}
- function refreshUprights(){fieldEl.querySelectorAll('.fu97-up').forEach(n=>{const t=upT(n.dataset.big==='1');if(t)n.setAttribute('transform',t);else n.removeAttribute('transform');});}
+ function refreshUprights(){fieldEl.querySelectorAll('.fu97-up').forEach(n=>{const t=upT(n.dataset.big==='1',n.dataset.ball==='1');if(t)n.setAttribute('transform',t);else n.removeAttribute('transform');});}
  const TK={rim:34,body:30.5,sel:43,halo:50};
 
  // ---------------------------------------------------------------- utilidades
@@ -930,6 +962,14 @@ const V97_MATCH_PATCH = String.raw`
    svg('path',{d:'M'+(gx+dir*300)+' 438.2A150 150 0 0 '+(dir>0?1:0)+' '+(gx+dir*300)+' 661.8'},L);
   });
   svg('path',{d:'M28 0A28 28 0 0 1 0 28M1800 28A28 28 0 0 1 1772 0M1772 1100A28 28 0 0 1 1800 1072M0 1072A28 28 0 0 1 28 1100'},L);
+  // Banderines de córner, apuntando hacia afuera de la cancha.
+  const flags=svg('g',{class:'fu97-flags'},pitch);
+  [['',0,0],[' scale(-1 1)',1800,0],[' scale(1 -1)',0,1100],[' scale(-1 -1)',1800,1100]].forEach(f=>{
+   const fg=svg('g',{transform:'translate('+f[1]+' '+f[2]+')'+f[0]},flags);
+   svg('line',{class:'fu97-flag-pole',x1:0,y1:0,x2:-9,y2:-24},fg);
+   svg('path',{class:'fu97-flag-cloth',d:'M-9 -24L-27 -19.5L-9 -14Z'},fg);
+   svg('circle',{class:'fu97-flag-base',r:3.4},fg);
+  });
   const spots=svg('g',{class:'fu97-spots'},pitch);
   [[900,550],[200,550],[1600,550]].forEach(q=>svg('circle',{cx:q[0],cy:q[1],r:7.5},spots));
   // Zonas clicables del arco: coinciden con las tres casillas de gol y el arco dibujado.
@@ -1028,12 +1068,17 @@ const V97_MATCH_PATCH = String.raw`
    transform:'translate('+X(x.c)+' '+Y(x.r)+')','aria-label':'Jugador '+x.n+' · '+teamName(x.t)
   });
   g.dataset.id=x.id;
+  // Zona táctil más grande (radio 48 en casillas de 100): ayuda en celulares sin tapar casillas vecinas.
+  svg('circle',{class:'fu97-tk-hit',r:48},g);
   const up=upGroup(g,true);
   svg('ellipse',{class:'fu97-tk-shadow',cx:0,cy:0,rx:34,ry:14.5,transform:'translate(3 15)'},up);
   svg('circle',{class:'fu97-tk-halo',r:TK.halo},up);
   svg('circle',{class:'fu97-tk-sel',r:TK.sel},up);
   svg('circle',{class:'fu97-tk-must',r:TK.sel-2},up);
   const body=svg('g',{class:'fu97-tk-body'},up);
+  // Canto de la ficha: le da volumen de pieza de mesa.
+  svg('circle',{class:'fu97-tk-edge',cy:4.5,r:TK.rim,fill:k.accent},body);
+  svg('circle',{class:'fu97-tk-edge-dk',cy:4.5,r:TK.rim},body);
   svg('circle',{class:'fu97-tk-rim',r:TK.rim,fill:k.accent},body);
   svg('circle',{class:'fu97-tk-base',r:TK.body,fill:gk?dark(k.primary):k.primary},body);
   if(!gk&&k.pattern!=='plain'){
@@ -1073,7 +1118,8 @@ const V97_MATCH_PATCH = String.raw`
  function buildBall(){
   ballG.innerHTML='';
   ballG.classList.add('fu97-ball');
-  const up=upGroup(ballG,true);
+  const up=upGroup(ballG,true);up.dataset.ball='1';
+  {const t0=upT(true,true);if(t0)up.setAttribute('transform',t0);}
   ballShadowEl=svg('ellipse',{class:'fu97-ball-shadow',cx:0,cy:0,rx:14,ry:6,transform:'translate(2 10)'},up);
   ballLift=svg('g',{class:'fu97-ball-lift'},up);
   svg('circle',{class:'fu97-ball-base',r:13,fill:'url(#fu97BallBase)'},ballLift);
@@ -1098,7 +1144,7 @@ const V97_MATCH_PATCH = String.raw`
   ballShadowEl.setAttribute('fill-opacity',(.3+.7*sh).toFixed(2));
   if(spin!==undefined){ballSpin=spin%360;ballSpinG.setAttribute('transform','rotate('+r1(ballSpin)+')');}
  }
- function ballOffset(){return vertical?{x:-27,y:29}:{x:29,y:27};}
+ function ballOffset(){return vertical?{x:-31,y:33}:{x:29,y:27};}
  function cellPoint(c,r){return {x:X(c),y:Y(r)};}
  function ballPoint(q){const pt=cellPoint(q.c,q.r);if(owned(q)){const o=ballOffset();pt.x+=o.x;pt.y+=o.y;}return pt;}
 
@@ -1612,6 +1658,7 @@ const V97_MATCH_PATCH = String.raw`
   if(names[1])away.appendChild(names[1]);away.appendChild(ui.chip2);
   result.appendChild(s1El);el('span','fu97-sb-sep',result,'–');result.appendChild(s2El);
   sbScore.append(home,result,away);
+  ui.result=result;
   // Nombre completo en pantallas anchas y sigla en celulares (club en Torneo, «EQ 1/EQ 2» en Práctica).
   const clubs=tournamentMode&&tournamentClub&&tournamentOpponent?[tournamentClub,tournamentOpponent]:[null,null];
   [names[0],names[1]].forEach((b,i)=>{
@@ -1652,6 +1699,10 @@ const V97_MATCH_PATCH = String.raw`
   frame.appendChild(scrollEl);
   const tag=el('div','fu97-replay-tag',frame);tag.setAttribute('aria-hidden','true');
   tag.innerHTML='<i></i><span>REPETICIÓN</span>';
+  // Cartel tipo transmisión para reanudaciones y jugadas (el texto completo sigue en el relato).
+  ui.banner=el('div','fu97-banner',frame);ui.banner.setAttribute('aria-hidden','true');
+  ui.bannerTitle=el('b',null,ui.banner);ui.bannerSub=el('span',null,ui.banner);
+  ui.bannerS1=el('em',null,ui.bannerSub);ui.bannerS2=el('em','fu97-banner-more',ui.bannerSub);
   ui.frame=frame;
   // Barra de acción (dentro del tablero para que también se vea en pantalla completa).
   const bar=el('div','fu97-actionbar');bar.setAttribute('role','group');bar.setAttribute('aria-label','Jugada en curso');
@@ -1705,6 +1756,28 @@ const V97_MATCH_PATCH = String.raw`
  const WARN=/^(Saque inicial obligatorio|Tiro libre obligatorio|Pase bloqueado|Pase\/remate bloqueado|Movimiento bloqueado|Cada acción del turno|Ahora juega el Equipo|Ese movimiento no es válido|Ese destino supera|Esa casilla está ocupada|El arquero bloquea|El arquero tiene la posesión|La disputa|En un saque de banda|Primero debe ejecutarse|El saque inicial debe|El jugador seleccionado debe|Seleccioná al jugador|No existe una casilla|No hay espacio libre|Partido finalizado)/;
  const EVENT=/^(¡FALTA|FALTA SANCIONADA|Falta rápida|Gol confirmado|FINAL DEL PARTIDO|Final del primer tiempo|Comienza el segundo tiempo|¡Remate|¡Desvío|¡Atajada|SAQUE|LATERAL|TIRO LIBRE)/i;
  let lastMsg='';
+ // Cartel de jugada: sólo reanudaciones, desvíos y comienzos de período. Faltas, goles y remates ya tienen su aviso propio.
+ const RESTART=/^(SAQUE[A-ZÁÉÍÓÚÑ ]*|LATERAL|TIRO LIBRE[A-ZÁÉÍÓÚÑ ]*|CÓRNER|TIRO DE ESQUINA)\s*:\s*(.*)$/;
+ let bannerTimer=0;
+ function bannerFor(text){
+  const m=RESTART.exec(text);
+  if(m)return {title:m[1].trim(),sub:m[2],kind:'restart'};
+  if(/^¡Desvío!/.test(text))return {title:'¡DESVÍO!',sub:text.replace(/^¡Desvío!\s*/,''),kind:'event'};
+  if(/^Comienza el segundo tiempo/.test(text))return {title:'SEGUNDO TIEMPO',sub:'',kind:'period'};
+  if(/^¡Comienza el partido!/.test(text))return {title:'¡COMIENZA EL PARTIDO!',sub:text.replace(/^¡Comienza el partido!\s*/,''),kind:'period'};
+  return null;
+ }
+ function showBanner(text){
+  if(!ui.banner||!stateIsLive())return;
+  const b=bannerFor(text);if(!b)return;
+  ui.bannerTitle.textContent=b.title;
+  const parts=b.sub.split('. ').map(x=>x.replace(/[.\s]+$/,'')).filter(Boolean);
+  ui.bannerS1.textContent=parts[0]||'';ui.bannerS2.textContent=parts[1]?' · '+parts[1]:'';
+  ui.bannerSub.hidden=!parts.length;
+  ui.banner.dataset.kind=b.kind;
+  ui.banner.classList.remove('is-on');void ui.banner.offsetWidth;ui.banner.classList.add('is-on');
+  clearTimeout(bannerTimer);bannerTimer=setTimeout(()=>ui.banner.classList.remove('is-on'),2600);
+ }
  function onMessage(){
   const m=$('msg');if(!m||!ui.msgWrap)return;
   const text=m.textContent||'';
@@ -1714,6 +1787,7 @@ const V97_MATCH_PATCH = String.raw`
   ui.msgWrap.classList.toggle('is-warn',WARN.test(text));
   ui.msgWrap.classList.toggle('is-event',!WARN.test(text)&&EVENT.test(text));
   ui.msgWrap.classList.remove('is-flash');void ui.msgWrap.offsetWidth;ui.msgWrap.classList.add('is-flash');
+  showBanner(text);
   requestAnimationFrame(fitMsgMore);
  }
  function onOverlay(n){
@@ -1776,6 +1850,8 @@ const V97_MATCH_PATCH = String.raw`
   // Ficha elegida y modo.
   const x=selected!==null?p.find(z=>z.id===selected):null;
   const o=owner();
+  // Barra de posesión bajo el resultado: del lado del equipo que tiene la pelota.
+  if(ui.result)ui.result.dataset.poss=o&&!matchClockFinished?String(o.t):'0';
   let name,sub,key;
   if(x&&!matchClockFinished){
    const cpu=x.t===CPU_TEAM&&cpuAutoEnabled;
