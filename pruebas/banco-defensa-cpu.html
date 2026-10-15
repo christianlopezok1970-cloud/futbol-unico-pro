@@ -696,8 +696,10 @@ var SCENARIOS = [
     var fl = await bootstrap();
     // Desarrollo: ?fuente=archivo.json reemplaza las posiciones incluidas por otras guardadas en un archivo.
     if (params.get('fuente')) { var resp = await fetch(params.get('fuente'), { cache: 'no-store' }); SCENARIOS = await resp.json(); }
+    // ?mejoras=no reproduce las decisiones de v98 original (fase 3 desactivada); ?fase3=evaluacion deja solo la etapa 3a.
     if (params.get('mejoras') === 'no' && fl.def) F.flags({ enabled: false });
     if (params.get('mejoras') === 'si' && fl.def) F.flags({ enabled: true });
+    if (params.get('fase3') === 'evaluacion' && fl.def) F.flags({ enabled: true, roots: false });
     document.getElementById('totals').textContent = SCENARIOS.length + ' posiciones iniciales disponibles.';
     document.getElementById('state').textContent = 'LISTO'; document.getElementById('state').className = 'pill ok';
     var modo = params.get('modo') || '';
