@@ -63,3 +63,10 @@ así que un remate del 55% podía valer como uno del 67% o del 33% según la sue
 resultados con gol y sin gol por la probabilidad de gol del motor, la misma que ve el jugador. Además, cuando varias
 jugadas valen casi lo mismo (menos de 4 puntos, menos del 1,5% del valor de un gol), elige entre ellas al azar en lugar
 de repetir siempre la misma; nunca elige una jugada claramente peor.
+
+IA v98 · Fase 2c (anticipación defensiva): en la búsqueda, el turno rival se modelaba con sus dos jugadas mejor
+puntuadas por la heurística general, y en uno de cada cuatro turnos rivales su jugada más peligrosa quedaba afuera
+(por ejemplo, una conducción con 37% de amenaza de gol frente a dos movimientos sin peligro). Ahora la respuesta rival
+más peligrosa (remate, pase para remate o conducción para remate) siempre se considera, sin agregar nodos. Las mejoras
+de la fase 2 se controlan con el objeto fuV98Ai de app.js; con enabled=false la CPU decide como antes. Prueba:
+pruebas/regresion-ia-cpu.html, que además compara la huella de 29 funciones de reglas con la de 901c62b.

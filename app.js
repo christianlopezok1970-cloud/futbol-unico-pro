@@ -2416,6 +2416,60 @@ const V98_AI_PATCH = String.raw`
   fuV98LastDecision={at:matchClockActions,scored:scored.map(x=>({...x})),pick};
   return tacticalCandidates().find(a=>sequenceActionKey(a)===pick)||null;
  };
+ // ======== Etapa 2c ========
+ // ---- 3. Anticipación defensiva: en el turno rival, la búsqueda incluye su opción más peligrosa ----
+ // La lista corta de respuestas rivales sale de la heurística general; si la amenaza principal del poseedor
+ // (remate, pase para remate o conducción para remate, según el mapa de amenazas de v96) no está, reemplaza
+ // la última respuesta. La CPU no ve ninguna tirada futura: solo considera esa jugada posible del rival.
+ function fuV98WithMostDangerous(shortlist,candidates){
+  const holder=owner();
+  if(!holder||holder.t===CPU_TEAM||!shortlist.length)return shortlist;
+  const top=fuV96ThreatOptions(p,holder.id)[0];
+  if(!top||top.probability<0.12)return shortlist;
+  const mine=candidates.filter(a=>a.playerId===holder.id);
+  let match=null;
+  if(top.type==='direct')match=mine.filter(a=>a.kind==='shoot').sort((x,y)=>(y.goalProbability||0)-(x.goalProbability||0))[0]||null;
+  else if(top.type==='pass-shot')match=mine.find(a=>a.kind==='pass'&&a.receiverId===top.receiverId)||null;
+  else if(top.type==='carry-shot'){const cell=top.path&&top.path[0];match=cell?mine.find(a=>a.kind==='carry'&&a.to.c===cell.c&&a.to.r===cell.r)||null:null;}
+  if(!match)return shortlist;
+  const key=sequenceActionKey(match);
+  if(shortlist.some(a=>sequenceActionKey(a)===key))return shortlist;
+  const out=shortlist.slice();
+  if(out.length>=2)out[out.length-1]=match;else out.push(match);
+  return out;
+ }
+ async function fuV98SearchSequenceNode(depth,rootTeam,goalDiff,alpha,beta,ctx){
+  sequenceVisitedNodes++;ctx.nodes++;
+  if(ctx.nodes%14===0){ctx.status.textContent='Buscando respuestas rivales… '+ctx.nodes+' nodos explorados · profundidad restante '+depth+'.';await new Promise(resolve=>setTimeout(resolve,0));}
+  const staticValue=evaluateSequencePosition(rootTeam,goalDiff);
+  if(depth<=0)return {value:staticValue,pv:[]};
+  const candidates=tacticalCandidates();
+  if(!candidates.length)return {value:staticValue-5,pv:[]};
+  const maximizing=turn===rootTeam;
+  let shortlist=chooseSearchActions(candidates,ctx.width);
+  if(!maximizing&&fuV98Ai.enabled&&fuV98Ai.anticipation)shortlist=fuV98WithMostDangerous(shortlist,candidates);
+  let bestValue=maximizing?-Infinity:Infinity,bestPv=[];
+  for(const a of shortlist){
+   const snap=captureSequenceState(),beforeTurn=turn,beforeAction=actionNo,goals=[0,0];
+   const actionSummary=sequenceActionSummary(a,beforeTurn,beforeAction);
+   const result=simulateOneAction(a,goals);
+   let value,pv;
+   if(result==='blocked'){value=evaluateSequencePosition(rootTeam,goalDiff)-4;pv=[{...actionSummary,label:actionSummary.label+' (bloqueada en esta simulación)'}];}
+   else{
+    advanceSimulatedAction(result,a.playerId);
+    const nextDiff=[goalDiff[0]+goals[0],goalDiff[1]+goals[1]];
+    const child=await searchSequenceNode(depth-1,rootTeam,nextDiff,alpha,beta,ctx);
+    value=child.value;pv=[actionSummary,...child.pv];
+   }
+   restoreSequenceState(snap);
+   if(maximizing){if(value>bestValue){bestValue=value;bestPv=pv;}alpha=Math.max(alpha,bestValue);}
+   else{if(value<bestValue){bestValue=value;bestPv=pv;}beta=Math.min(beta,bestValue);}
+   if(beta<=alpha)break;
+  }
+  return {value:bestValue,pv:bestPv};
+ }
+ searchSequenceNode=fuV98SearchSequenceNode;
+
  // ================== FIN FÚTBOL ÚNICO v98 · IA (FASE 2) ==================
 `;
 
