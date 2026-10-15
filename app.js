@@ -32,7 +32,7 @@ html.fu97 body{
  box-shadow:0 14px 34px rgba(0,0,0,.4),inset 0 1px 0 rgba(255,255,255,.05)!important;
 }
 .fu97 #app .head.fu97-topbar::before,.fu97 #app .head.fu97-topbar::after{content:none!important;display:none!important}
-.fu97 #app .fu97-nav{display:flex!important;flex:none;width:auto!important;margin:0!important}
+.fu97 #app .fu97-nav{display:flex!important;flex:none;width:auto!important;min-width:0!important;margin:0!important}
 .fu97 #app .fu97-nav a{
  display:inline-flex!important;align-items:center;gap:9px;height:100%;min-height:52px;padding:0 15px!important;
  border:1px solid var(--k-line)!important;border-radius:12px!important;background:#0a0f16!important;
@@ -66,6 +66,10 @@ html.fu97 body{
 .fu97 #app .fu97-away b.tournament-team-label{flex-direction:row-reverse}
 .fu97 #app .fu97-name-full{min-width:0;overflow:hidden;text-overflow:ellipsis}
 .fu97 #app .fu97-name-short{display:none}
+/* Si los nombres no entran: en Torneo primero se quita la camiseta (queda el escudo); después, siglas en los dos equipos. */
+.fu97 #app .fu97-scorebug.fu97-nochip .fu97-kitchip{display:none}
+.fu97 #app .fu97-scorebug.fu97-codes .fu97-name-full{display:none}
+.fu97 #app .fu97-scorebug.fu97-codes .fu97-name-short{display:inline}
 .fu97 #app .fu97-kitchip{flex:none;width:34px;height:34px;filter:drop-shadow(0 3px 4px rgba(0,0,0,.5))}
 .fu97 #app .fu97-kitchip svg,.fu97 #app .fu97-kits-preview svg{display:block;width:100%;height:100%}
 .fu97 #app .fu97-sb-result{display:flex;align-items:center;justify-content:center;gap:2px;padding:0 6px;background:linear-gradient(180deg,#fbfcfe,#dde3ec);box-shadow:inset 0 -3px 0 rgba(0,0,0,.08)}
@@ -109,6 +113,7 @@ html.fu97 body{
 .fu97 #app .fu97-pips i.is-done{background:var(--fu97-turn-c);opacity:.55}
 .fu97 #app .fu97-pips i.is-now{background:var(--fu97-turn-c);box-shadow:0 0 10px var(--fu97-turn-c)}
 .fu97 #app .fu97-turn-sub{align-self:center;color:var(--k-muted);font:750 10px/1.2 var(--k-font);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:150px}
+.fu97 #app .fu97-turn-sub.fu97-off{display:none}
 
 /* ---------------------------------------------------------------- cuerpo: cancha + panel lateral */
 .fu97 #app .fu97-main{display:grid;grid-template-columns:minmax(0,1fr);gap:12px;align-items:start}
@@ -584,6 +589,11 @@ html.fu97 body.tournament-match #app .fu97-kits-body label.ctrl{display:none!imp
  .fu97 #app .fullscreen-score-panel .score{font-size:25px!important;min-width:30px!important}
  .fu97 #app .fullscreen-score-panel .fu97-sb-team b{font-size:11px!important}
 }
+/* Celulares bajos: el relato ocupa una línea (con «Ver más») para que la cancha entre completa. */
+@media (max-width:680px) and (max-height:760px){
+ .fu97 #app .fu97-ab-msg{padding:4px 8px}
+ .fu97 #app .fu97-ab-msg #msg{-webkit-line-clamp:1}
+}
 @media (max-width:380px){
  .fu97 #app .fu97-nav{display:none!important}
  .fu97 #app .fu97-sb-team b{font-size:10px!important}
@@ -620,7 +630,7 @@ html.fu97 body.tournament-match #app .fu97-kits-body label.ctrl{display:none!imp
  .fu97 #app .fu97-ab-player{padding:3px;background:none;border:0}
  .fu97 #app .fu97-ab-token{width:30px;height:30px}
  .fu97 #app .fu97-ab-text{display:none}
- .fu97 #app .fu97-msg-more{display:none!important}
+ .fu97 #app .fu97-msg-more{padding:2px 7px;font-size:9.5px}
  .fu97 #app .fu97-ab-msg{min-height:36px;padding:3px 8px}
  .fu97 #app .fu97-ab-msg #msg{font-size:11px!important;-webkit-line-clamp:2}
  .fu97 #app .fu97-ab-tools .fu97-tool{min-height:30px!important;min-width:34px!important;padding:0 7px!important}
@@ -1704,7 +1714,7 @@ const V97_MATCH_PATCH = String.raw`
   ui.msgWrap.classList.toggle('is-warn',WARN.test(text));
   ui.msgWrap.classList.toggle('is-event',!WARN.test(text)&&EVENT.test(text));
   ui.msgWrap.classList.remove('is-flash');void ui.msgWrap.offsetWidth;ui.msgWrap.classList.add('is-flash');
-  requestAnimationFrame(()=>{ui.more.hidden=!(m.scrollHeight>m.clientHeight+2);});
+  requestAnimationFrame(fitMsgMore);
  }
  function onOverlay(n){
   if(n.id==='goalCelebrationOverlay'){
@@ -1761,7 +1771,7 @@ const V97_MATCH_PATCH = String.raw`
    pip.className=matchClockFinished?'':i<actionNo-1?'is-done':i===actionNo-1?'is-now':'';
   });
   ui.turnBox.dataset.team=String(turn);
-  ui.turnSub.textContent=matchClockFinished?'Partido terminado':'Acción '+actionNo+'/'+ACTIONS+' · '+teamName(turn);
+  if(matchClockFinished)setTurnSub('Partido terminado','');else setTurnSub('Acción '+actionNo+'/'+ACTIONS+' · '+teamName(turn),'Acción '+actionNo+'/'+ACTIONS);
   ui.pips.parentNode.setAttribute('aria-label',ui.badge.textContent+' · acción '+actionNo+' de '+ACTIONS);
   // Ficha elegida y modo.
   const x=selected!==null?p.find(z=>z.id===selected):null;
@@ -1788,6 +1798,7 @@ const V97_MATCH_PATCH = String.raw`
   const clockState=$('matchClockState');
   if(clockState){const c=$('matchClock');if(c){c.classList.toggle('fu97-clock-break',!!halftimePaused);c.classList.toggle('fu97-clock-final',!!matchClockFinished);}}
   if(chipSubDirty){chipSubDirty=false;fitChipSub();requestAnimationFrame(fitChipSub);}
+  if(turnSubDirty){turnSubDirty=false;fitTurnSub();}
  }
 
  // ---------------------------------------------------------------- orientación y tamaño
@@ -1834,10 +1845,45 @@ const V97_MATCH_PATCH = String.raw`
   const range=document.createRange();range.selectNodeContents(s);
   if(range.getBoundingClientRect().width>have+0.02){s.textContent=short;s.title=chipSubFull;}
  }
+ // ¿El contenido real (con decimales) es más ancho que la caja? scrollWidth redondea y el navegador corta igual con «…».
+ function textOverflows(e){
+  if(!e||!e.getClientRects().length)return false;
+  const have=e.getBoundingClientRect().width;if(!have)return false;
+  const range=document.createRange();range.selectNodeContents(e);
+  return range.getBoundingClientRect().width>have+0.02;
+ }
+ // Marcador: nombres completos si entran los dos; en Torneo, después sin camiseta; si no, siglas en ambos (nunca mezclado).
+ function fitTeamNames(){
+  const sb=ui.scorebug;if(!sb)return;
+  // Se mide cada nombre por separado: medido sobre la etiqueta entera, Chrome devuelve el texto ya recortado por el «…» interno.
+  const parts=Array.from(sb.querySelectorAll('.fu97-sb-team > b, .fu97-sb-team .fu97-name-full, .fu97-sb-team .fu97-name-short'));
+  const cut=e=>!!e.getClientRects().length&&(e.scrollWidth>e.clientWidth||textOverflows(e));
+  const overflow=()=>parts.some(cut);
+  sb.classList.remove('fu97-nochip','fu97-codes');
+  if(!overflow())return;
+  if(tournamentMode){sb.classList.add('fu97-nochip');if(!overflow())return;}
+  sb.classList.add('fu97-codes');
+ }
+ // Subtítulo del turno: «Acción 1/3 · Equipo», «Acción 1/3» o nada si no hay lugar.
+ let turnSubFull=null,turnSubShort='',turnSubDirty=false;
+ function setTurnSub(full,short){if(full===turnSubFull)return;turnSubFull=full;turnSubShort=short;turnSubDirty=true;}
+ function fitTurnSub(){
+  const s=ui.turnSub;if(!s||turnSubFull===null)return;
+  s.classList.remove('fu97-off');s.textContent=turnSubFull;
+  if(!s.getClientRects().length)return;
+  if(turnSubShort&&textOverflows(s))s.textContent=turnSubShort;
+  if(textOverflows(s)||s.getBoundingClientRect().width<24)s.classList.add('fu97-off');
+ }
+ // «Ver más» sólo cuando el relato no entra; se recalcula también al cambiar el tamaño.
+ function fitMsgMore(){
+  const m=$('msg');if(!m||!ui.more||!ui.msgWrap||ui.msgWrap.classList.contains('is-open'))return;
+  ui.more.hidden=!(m.scrollHeight>m.clientHeight+2);
+ }
+ function fitTexts(){fitTeamNames();fitTurnSub();fitChipSub();fitMsgMore();}
  function sizeBoard(){
   const fs=isFullscreen();
   if(ui.fsBtn)ui.fsBtn.innerHTML='<span class="fs-icon" aria-hidden="true">'+(fs?ICONS.collapse:ICONS.expand)+'</span>';
-  if(fs){boardEl.style.removeProperty('--fu97-board-w');requestAnimationFrame(()=>{const cw=scrollEl.clientWidth;if(cw)scrollEl.style.setProperty('--fu97-cw',cw+'px');fitChipSub();});return;}
+  if(fs){boardEl.style.removeProperty('--fu97-board-w');requestAnimationFrame(()=>{const cw=scrollEl.clientWidth;if(cw)scrollEl.style.setProperty('--fu97-cw',cw+'px');fitTexts();});return;}
   const col=boardEl.parentElement;if(!col)return;
   const colW=col.clientWidth;if(!colW)return;
   const head=appEl.querySelector('.head');
@@ -1851,12 +1897,16 @@ const V97_MATCH_PATCH = String.raw`
   const chromeX=(parseFloat(bcs.paddingLeft)||0)+(parseFloat(bcs.paddingRight)||0)+(parseFloat(bcs.borderLeftWidth)||0)*2;
   const availH=window.innerHeight-padY-headH-barH-chromeY-4;
   const ratio=vertical?VB.h/VB.w:VB.w/VB.h;
-  let w=Math.floor(availH*ratio+chromeX);
-  if(vertical)w=Math.max(w,Math.floor(colW*.86));
-  w=Math.max(Math.min(colW,320),Math.min(colW,w));
+  const fitW=Math.floor(availH*ratio+chromeX);
+  let w;
+  if(vertical){
+   // Celular vertical («Completa»): la cancha entra en pantalla; como mucho ~18px (la red, fuera de la línea de gol) quedan bajo la barra fija.
+   w=Math.max(fitW,Math.min(Math.floor(colW*.86),fitW+Math.round(18*ratio)));
+   w=Math.min(colW,Math.max(w,Math.min(colW,236)));
+  }else w=Math.max(Math.min(colW,320),Math.min(colW,fitW));
   boardEl.style.setProperty('--fu97-board-w',w+'px');
   const cw=scrollEl.clientWidth;if(cw)scrollEl.style.setProperty('--fu97-cw',cw+'px');
-  fitChipSub();
+  fitTexts();
  }
  let sizeRaf=0;
  function scheduleSize(){cancelAnimationFrame(sizeRaf);sizeRaf=requestAnimationFrame(()=>{applyOrientation();});}
@@ -1899,6 +1949,8 @@ const V97_MATCH_PATCH = String.raw`
   applyOrientation();
   drawPlayers();drawBall();refresh();
   onMessage();
+  // Las mediciones de texto dependen de la tipografía: se repiten cuando terminan de cargar las fuentes.
+  if(document.fonts&&document.fonts.ready)document.fonts.ready.then(()=>{if(rootEl.classList.contains('fu97'))fitTexts();});
   const onViewport=()=>scheduleSize();
   window.addEventListener('resize',onViewport,{passive:true});
   window.addEventListener('orientationchange',onViewport,{passive:true});
