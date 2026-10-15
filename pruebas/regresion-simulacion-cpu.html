@@ -1,0 +1,371 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<!-- La página vive en /pruebas/ pero carga el juego desde la raíz, igual que index.html. -->
+<base href="../">
+<title>Fútbol Único · Prueba de regresión · simulación de la CPU</title>
+<style>
+  :root { color-scheme: dark; --ok:#c8ff2e; --bad:#ff5263; --mut:#93a0b4; --line:rgba(233,238,246,.12); }
+  body { margin:0; background:#06080c; color:#e9eef6; font:14px/1.45 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif; }
+  main { max-width:1100px; margin:0 auto; padding:24px 18px 60px; }
+  h1 { font-size:20px; margin:0 0 6px; letter-spacing:-.01em; }
+  p.lead { color:var(--mut); margin:0 0 18px; }
+  #summary { display:flex; gap:12px; flex-wrap:wrap; align-items:center; padding:12px 14px; border:1px solid var(--line); border-radius:6px; background:#0b0f16; margin-bottom:14px; }
+  #summary strong { font-size:16px; }
+  .pill { padding:3px 9px; border-radius:999px; font-weight:800; font-size:12px; letter-spacing:.06em; }
+  .pill.ok { background:rgba(200,255,46,.12); color:var(--ok); } .pill.bad { background:rgba(255,82,99,.14); color:var(--bad); } .pill.run { background:rgba(62,230,255,.1); color:#3ee6ff; }
+  table { width:100%; border-collapse:collapse; font-size:13px; }
+  th, td { text-align:left; padding:7px 8px; border-bottom:1px solid var(--line); vertical-align:top; }
+  th { color:var(--mut); font-size:11px; letter-spacing:.08em; text-transform:uppercase; }
+  td.res { font-weight:800; white-space:nowrap; } td.res.ok { color:var(--ok); } td.res.bad { color:var(--bad); }
+  td.det { color:var(--mut); font-family:ui-monospace,SFMono-Regular,Menlo,monospace; font-size:12px; }
+  tr.group td { color:#3ee6ff; font-weight:800; padding-top:16px; border-bottom-color:rgba(62,230,255,.25); }
+  .stage-wrap { margin-top:22px; border:1px solid var(--line); border-radius:6px; overflow:hidden; }
+  .stage-wrap > p { margin:0; padding:8px 12px; color:var(--mut); font-size:12px; border-bottom:1px solid var(--line); }
+  #fuGameStage { height:640px; position:relative; }
+  #fuGameStage iframe { width:100%; height:100%; border:0; display:block; }
+  .fu-shell-header, #fuLoading small { display:none; }
+</style>
+<script>
+  // Aislamiento del almacenamiento: la prueba no lee ni escribe los datos guardados del jugador
+  // (historial y análisis de partidas, memoria defensiva de la CPU, identidad táctica, torneo).
+  function installMemoryStorage(win) {
+    var data = new Map();
+    var store = {
+      getItem: function (k) { k = String(k); return data.has(k) ? data.get(k) : null; },
+      setItem: function (k, v) { data.set(String(k), String(v)); },
+      removeItem: function (k) { data.delete(String(k)); },
+      clear: function () { data.clear(); },
+      key: function (i) { var keys = Array.from(data.keys()); return i >= 0 && i < keys.length ? keys[i] : null; },
+      get length() { return data.size; }
+    };
+    try { Object.defineProperty(win, 'localStorage', { configurable: true, enumerable: true, get: function () { return store; } }); win.__fuStorageIsolated = win.localStorage === store; }
+    catch (error) { win.__fuStorageIsolated = false; }
+  }
+  installMemoryStorage(window);
+  // app.js elige la página con ?page=...; Práctica carga el motor del partido (el mismo que Torneo).
+  (function () {
+    var url = new URL(location.href);
+    if (url.searchParams.get('page') !== 'practice') { url.searchParams.set('page', 'practice'); history.replaceState(null, '', url.pathname + url.search); }
+  })();
+</script>
+<script src="app.js" defer></script>
+</head>
+<body>
+  <header class="fu-shell-header">
+    <button id="fuBrand" type="button">FU</button>
+    <span id="fuStatusDot"></span><strong id="fuStatusTitle"></strong><small id="fuStatusText"></small>
+  </header>
+  <main>
+    <h1>Prueba de regresión · simulación predictiva de la CPU</h1>
+    <p class="lead">Comprueba que la simulación con la que la CPU evalúa jugadas (<code>simulateOneAction</code> y la búsqueda)
+      produce el mismo resultado que el motor real: misma ocupación de casillas, posesión, posición del balón, turno,
+      reinicios y tiradas de azar. Cada acción se ejecuta dos veces desde el mismo estado y con las mismas tiradas: una en la
+      simulación y otra por el camino real del partido (despachador de la CPU o pasos del tablero humano). Las animaciones se
+      omiten para que la prueba sea rápida; la lógica es la del motor. El almacenamiento queda aislado en memoria.</p>
+    <section id="summary"><span class="pill run" id="state">EJECUTANDO</span><strong id="totals">Cargando el motor…</strong><span id="v98"></span></section>
+    <table>
+      <thead><tr><th>Prueba</th><th>Resultado</th><th>Detalle</th></tr></thead>
+      <tbody id="rows"></tbody>
+    </table>
+    <div class="stage-wrap">
+      <p>Partido real usado por la prueba (las posiciones cambian según cada escenario).</p>
+      <div id="fuGameStage" aria-busy="true">
+        <div id="fuLoading"><strong>Preparando</strong><small></small></div>
+        <div id="fuError" hidden><p id="fuErrorText"></p><button type="button" id="fuRetry">Reintentar</button></div>
+      </div>
+    </div>
+  </main>
+<script>
+// Casos reales en los que la simulación de 901c62b difería del motor (estado, jugada y tiradas exactas).
+var CASES=[{"cat":"D1 intercepci\u00f3n en trayectoria desviada","key":"pass|1|10|9||","kind":"pass","state":{"p":[[0,0,5],[1,2,2],[2,2,4],[3,2,6],[4,2,8],[5,5,5],[6,8,5],[7,5,9],[8,8,2],[9,5,1],[10,8,8],[11,17,5],[12,15,2],[13,15,4],[14,15,6],[15,15,8],[16,12,5],[17,9,5],[18,12,9],[19,9,2],[20,12,1],[21,9,8]],"ball":{"c":2,"r":2,"owner":1},"turn":1,"actionNo":2,"played":[6],"lastPlayedId":6,"kickoff":false,"restartPassOnlyId":null,"freeKickRequiredId":null,"freeKickAwardedTeam":null,"score":[0,0]},"randoms":[0.30589612456969917,0.7046530267689377,0.17295188340358436,0.22882158518768847,0.8637603858951479,0.03281501471064985,0.5819039375055581,0.3718437082134187,0.01972403679974377,0.7242443219292909,0.8582794105168432,0.4020691819023341]},{"cat":"D1 intercepci\u00f3n en trayectoria desviada","key":"pass|1|10|5||","kind":"pass","state":{"p":[[0,0,5],[1,2,2],[2,2,4],[3,2,6],[4,2,8],[5,5,5],[6,8,5],[7,5,9],[8,8,2],[9,5,1],[10,8,8],[11,17,5],[12,15,2],[13,15,4],[14,15,6],[15,15,8],[16,12,5],[17,9,5],[18,12,9],[19,9,2],[20,12,1],[21,9,8]],"ball":{"c":2,"r":2,"owner":1},"turn":1,"actionNo":2,"played":[6],"lastPlayedId":6,"kickoff":false,"restartPassOnlyId":null,"freeKickRequiredId":null,"freeKickAwardedTeam":null,"score":[0,0]},"randoms":[0.30784708820283413,0.1929423022083938,0.13315096264705062,0.11247532675042748,0.3558669132180512,0.1057562748901546,0.48754611099138856,0.33924795943312347,0.2593953616451472,0.03551250323653221,0.6373915346339345,0.09989101928658783]},{"cat":"D1 intercepci\u00f3n en trayectoria desviada","key":"pass|1|10|2||","kind":"pass","state":{"p":[[0,0,5],[1,2,2],[2,2,4],[3,2,6],[4,2,8],[5,5,5],[6,8,5],[7,5,9],[8,8,2],[9,5,1],[10,8,8],[11,17,5],[12,15,2],[13,15,4],[14,15,6],[15,15,8],[16,12,5],[17,9,5],[18,12,9],[19,9,2],[20,12,1],[21,9,8]],"ball":{"c":2,"r":2,"owner":1},"turn":1,"actionNo":2,"played":[6],"lastPlayedId":6,"kickoff":false,"restartPassOnlyId":null,"freeKickRequiredId":null,"freeKickAwardedTeam":null,"score":[0,0]},"randoms":[0.30980669637210667,0.7437320516910404,0.19127522432245314,0.39129280438646674,0.5887253538239747,0.2787739299237728,0.9469536154065281,0.9838483093772084,0.7553753885440528,0.7670352454297245,0.42703834525309503,0.0056431177072227]},{"cat":"D5 casilla de gol inv\u00e1lida","key":"pass|17|1|4||","kind":"pass","state":{"p":[[0,0,4],[1,2,1],[2,2,4],[3,1,5],[4,2,5],[5,5,5],[6,9,5],[7,5,9],[8,8,2],[9,5,1],[10,8,6],[11,17,3],[12,16,4],[13,15,4],[14,15,7],[15,16,9],[16,13,4],[17,7,4],[18,14,9],[19,12,2],[20,13,2],[21,9,8]],"ball":{"c":7,"r":4,"owner":17},"turn":2,"actionNo":1,"played":[],"lastPlayedId":null,"kickoff":false,"restartPassOnlyId":null,"freeKickRequiredId":null,"freeKickAwardedTeam":null,"score":[0,0]},"randoms":[0.6416693462524563,0.3986170906573534,0.7966843836475164,0.7588500666897744,0.03205800359137356,0.25035033910535276,0.29167211218737066,0.4026730922050774,0.3859297221060842,0.6064175472129136,0.5060965605080128,0.4231543173082173]},{"cat":"D4 orden del remate","key":"shoot|6|17|4||","kind":"shoot","state":{"p":[[0,0,5],[1,2,2],[2,2,4],[3,2,6],[4,2,8],[5,5,5],[6,13,5],[7,5,9],[8,8,2],[9,5,1],[10,8,8],[11,17,5],[12,15,2],[13,15,4],[14,15,6],[15,15,8],[16,12,5],[17,9,5],[18,12,9],[19,9,2],[20,12,1],[21,9,8]],"ball":{"c":13,"r":5,"owner":6},"turn":1,"actionNo":1,"played":[],"lastPlayedId":null,"kickoff":false,"restartPassOnlyId":null,"freeKickRequiredId":null,"freeKickAwardedTeam":null,"score":[0,0]},"randoms":[0.7832016141619533,0.6319657978601754,0.5090001740027219,0.14934333553537726,0.9975708753336221,0.19730704952962697,0.937404555035755,0.866606124676764,0.7607386060990393,0.385029787896201,0.15205776621587574,0.3301765965297818]},{"cat":"D4 orden del remate","key":"shoot|6|17|6||","kind":"shoot","state":{"p":[[0,0,5],[1,2,2],[2,2,4],[3,2,6],[4,2,8],[5,5,5],[6,13,5],[7,5,9],[8,8,2],[9,5,1],[10,8,8],[11,17,5],[12,15,2],[13,15,4],[14,15,6],[15,15,8],[16,12,5],[17,9,5],[18,12,9],[19,9,2],[20,12,1],[21,9,8]],"ball":{"c":13,"r":5,"owner":6},"turn":1,"actionNo":1,"played":[],"lastPlayedId":null,"kickoff":false,"restartPassOnlyId":null,"freeKickRequiredId":null,"freeKickAwardedTeam":null,"score":[0,0]},"randoms":[0.7743847116362303,0.5537456918973476,0.3796418395359069,0.582038584863767,0.8373271150048822,0.2205480372067541,0.8290194247383624,0.46502261399291456,0.008701517945155501,0.007526647532358766,0.5158252725377679,0.13177014933899045]},{"cat":"D5 casilla de gol inv\u00e1lida","key":"pass|19|0|1||","kind":"pass","state":{"p":[[0,0,5],[1,2,2],[2,2,4],[3,0,6],[4,2,8],[5,5,5],[6,8,5],[7,5,9],[8,8,2],[9,5,1],[10,8,8],[11,17,5],[12,15,2],[13,15,4],[14,15,7],[15,16,9],[16,12,5],[17,9,5],[18,12,9],[19,1,8],[20,12,1],[21,9,8]],"ball":{"c":1,"r":8,"owner":19},"turn":2,"actionNo":1,"played":[],"lastPlayedId":null,"kickoff":false,"restartPassOnlyId":null,"freeKickRequiredId":null,"freeKickAwardedTeam":null,"score":[0,0]},"randoms":[0.32484739692881703,0.857883537421003,0.39792625233531,0.9181726695969701,0.33527095639146864,0.1269498688634485,0.9525906641501933,0.9784515383653343,0.9987170023377985,0.863178210100159,0.5982357969041914,0.9306799133773893]},{"cat":"D4 orden del remate","key":"shoot|18|0|4||","kind":"shoot","state":{"p":[[0,0,5],[1,2,0],[2,2,4],[3,1,5],[4,3,7],[5,5,5],[6,8,5],[7,5,9],[8,8,2],[9,7,0],[10,9,7],[11,17,5],[12,15,2],[13,15,4],[14,15,7],[15,16,9],[16,13,4],[17,9,5],[18,4,3],[19,10,3],[20,12,1],[21,9,8]],"ball":{"c":4,"r":3,"owner":18},"turn":2,"actionNo":1,"played":[],"lastPlayedId":null,"kickoff":false,"restartPassOnlyId":null,"freeKickRequiredId":null,"freeKickAwardedTeam":null,"score":[0,0]},"randoms":[0.9298823913559318,0.6321508141700178,0.516107136150822,0.5914792804978788,0.63057397515513,0.0414061329793185,0.21021420997567475,0.9695341321639717,0.10986115387640893,0.08349222037941217,0.7083514470141381,0.8585691235493869]},{"cat":"D3 remate afuera","key":"shoot|18|0|4||","kind":"shoot","state":{"p":[[0,0,5],[1,2,0],[2,2,4],[3,1,5],[4,3,7],[5,5,5],[6,8,5],[7,5,9],[8,8,2],[9,7,0],[10,9,7],[11,17,5],[12,15,2],[13,15,4],[14,15,7],[15,16,9],[16,13,4],[17,9,5],[18,6,6],[19,10,3],[20,12,1],[21,9,8]],"ball":{"c":6,"r":6,"owner":18},"turn":2,"actionNo":1,"played":[],"lastPlayedId":null,"kickoff":false,"restartPassOnlyId":null,"freeKickRequiredId":null,"freeKickAwardedTeam":null,"score":[0,0]},"randoms":[0.6269811738748103,0.8132980009540915,0.4367673557717353,0.5962767987512052,0.36561410082504153,0.469471542397514,0.6914691238198429,0.4110690033994615,0.44418379571288824,0.6030601151287556,0.022722079418599606,0.9088029207196087]},{"cat":"D3 remate afuera","key":"shoot|18|0|6||","kind":"shoot","state":{"p":[[0,0,5],[1,2,0],[2,2,4],[3,1,5],[4,3,7],[5,5,5],[6,8,5],[7,5,9],[8,8,2],[9,7,0],[10,9,7],[11,17,5],[12,15,2],[13,15,4],[14,15,7],[15,16,9],[16,13,4],[17,9,5],[18,6,6],[19,10,3],[20,12,1],[21,9,8]],"ball":{"c":6,"r":6,"owner":18},"turn":2,"actionNo":1,"played":[],"lastPlayedId":null,"kickoff":false,"restartPassOnlyId":null,"freeKickRequiredId":null,"freeKickAwardedTeam":null,"score":[0,0]},"randoms":[0.625857537612319,0.4266265977639705,0.7395826892461628,0.5808363046962768,0.9535740984138101,0.375410882756114,0.5431446959264576,0.5195461048278958,0.8704386600293219,0.8904656074009836,0.10797088243998587,0.9834745556581765]},{"cat":"D3 remate afuera","key":"shoot|18|0|6||","kind":"shoot","state":{"p":[[0,0,5],[1,2,0],[2,2,4],[3,1,5],[4,1,6],[5,5,5],[6,8,5],[7,5,9],[8,8,2],[9,6,1],[10,9,7],[11,17,5],[12,16,1],[13,15,4],[14,15,7],[15,16,9],[16,13,4],[17,9,5],[18,4,9],[19,10,2],[20,12,1],[21,9,8]],"ball":{"c":4,"r":9,"owner":18},"turn":2,"actionNo":1,"played":[],"lastPlayedId":null,"kickoff":false,"restartPassOnlyId":null,"freeKickRequiredId":null,"freeKickAwardedTeam":null,"score":[0,0]},"randoms":[0.8958966690115631,0.5576020171865821,0.7364263953641057,0.12710514571517706,0.838032886153087,0.40245573595166206,0.21287679625675082,0.26792970253154635,0.12029330851510167,0.6159419030882418,0.6045470479875803,0.8127973934169859]},{"cat":"D2 tiro libre no limpiado","key":"pass|6|5|1||","kind":"pass","state":{"p":[[0,0,5],[1,2,2],[2,3,3],[3,2,6],[4,2,9],[5,5,5],[6,9,4],[7,5,9],[8,8,5],[9,5,1],[10,6,8],[11,17,5],[12,11,3],[13,15,4],[14,15,6],[15,16,6],[16,11,6],[17,9,6],[18,11,8],[19,9,2],[20,12,1],[21,9,9]],"ball":{"c":9,"r":4,"owner":6},"turn":1,"actionNo":1,"played":[],"lastPlayedId":null,"kickoff":false,"restartPassOnlyId":null,"freeKickRequiredId":6,"freeKickAwardedTeam":1,"score":[0,0]},"randoms":[0.6329670627601445,0.14032486570067704,0.5260413535870612,0.5740662387106568,0.036103063728660345,0.8631552660372108,0.29913633526302874,0.5777515277732164,0.028821959160268307,0.46696260175667703,0.6753296805545688,0.8903414912056178]},{"cat":"D2 tiro libre no limpiado","key":"pass|6|6|8||","kind":"pass","state":{"p":[[0,0,5],[1,2,2],[2,3,3],[3,2,6],[4,2,9],[5,5,5],[6,9,4],[7,5,9],[8,8,5],[9,5,1],[10,6,8],[11,17,5],[12,11,3],[13,15,4],[14,15,6],[15,16,6],[16,11,6],[17,9,6],[18,11,8],[19,9,2],[20,12,1],[21,9,9]],"ball":{"c":9,"r":4,"owner":6},"turn":1,"actionNo":1,"played":[],"lastPlayedId":null,"kickoff":false,"restartPassOnlyId":null,"freeKickRequiredId":6,"freeKickAwardedTeam":1,"score":[0,0]},"randoms":[0.6349185334984213,0.6520515796728432,0.5350661294069141,0.7057058052159846,0.5595008370000869,0.8106074999086559,0.6432538363151252,0.6017811484634876,0.25018300535157323,0.7810912099666893,0.8299295657780021,0.6115893844980747]},{"cat":"D2 tiro libre no limpiado","key":"pass|6|5|9||","kind":"pass","state":{"p":[[0,0,5],[1,2,2],[2,3,3],[3,2,6],[4,2,9],[5,5,5],[6,9,4],[7,5,9],[8,8,5],[9,5,1],[10,6,8],[11,17,5],[12,11,3],[13,15,4],[14,15,6],[15,16,6],[16,11,6],[17,9,6],[18,11,8],[19,9,2],[20,12,1],[21,9,9]],"ball":{"c":9,"r":4,"owner":6},"turn":1,"actionNo":1,"played":[],"lastPlayedId":null,"kickoff":false,"restartPassOnlyId":null,"freeKickRequiredId":6,"freeKickAwardedTeam":1,"score":[0,0]},"randoms":[0.7421046113595366,0.08590222615748644,0.8616843766067177,0.7764591379091144,0.7671385419089347,0.914974489249289,0.7785446390043944,0.21349684451706707,0.9989805715158582,0.4270647109951824,0.21816992084495723,0.10971698560751975]},{"cat":"D6 disputa por atr\u00e1s","key":"duel|21|8|5|6|atras","kind":"duel","state":{"p":[[0,0,5],[1,2,2],[2,2,4],[3,2,6],[4,2,8],[5,5,5],[6,8,5],[7,5,9],[8,8,2],[9,5,1],[10,8,8],[11,17,5],[12,15,2],[13,15,4],[14,15,6],[15,15,8],[16,12,5],[17,9,5],[18,12,9],[19,9,2],[20,12,1],[21,7,5]],"ball":{"c":8,"r":5,"owner":6},"turn":2,"actionNo":1,"played":[],"lastPlayedId":null,"kickoff":false,"restartPassOnlyId":null,"freeKickRequiredId":null,"freeKickAwardedTeam":null,"score":[0,0]},"randoms":[0.6453186355065554,0.09579003416001797,0.46133864554576576,0.8300706946756691,0.6512963168788701,0.4432238300796598,0.7953513734973967,0.6701207961887121,0.3687675844412297,0.3383471551351249,0.5839772345498204,0.9194104094058275]},{"cat":"D5 casilla de gol inv\u00e1lida","key":"pass|6|16|5||","kind":"pass","state":{"p":[[0,0,5],[1,2,2],[2,3,3],[3,2,6],[4,2,9],[5,5,5],[6,12,4],[7,5,9],[8,8,5],[9,5,1],[10,6,8],[11,17,5],[12,13,2],[13,15,4],[14,15,6],[15,16,6],[16,10,5],[17,9,5],[18,11,8],[19,9,3],[20,12,1],[21,9,9]],"ball":{"c":12,"r":4,"owner":6},"turn":1,"actionNo":1,"played":[],"lastPlayedId":null,"kickoff":false,"restartPassOnlyId":null,"freeKickRequiredId":null,"freeKickAwardedTeam":null,"score":[0,0]},"randoms":[0.7377029794733971,0.04781695199199021,0.819329812657088,0.44362295838072896,0.4519420696888119,0.6725726488512009,0.4878610083833337,0.7217574971728027,0.40213440963998437,0.9342505405656993,0.27870246628299356,0.6288063677493483]}];
+(function () {
+  'use strict';
+  // Gancho de prueba: se inserta en el motor SÓLO dentro de esta página (antes del cierre de v97/v96).
+  function engineHook() {
+    var nativeRandom = Math.random, forced = [], consumed = [];
+    Math.random = function () {
+      if (forced.length && simulationRandomState === null) { var v = forced.shift(); consumed.push(v); return v; }
+      return nativeRandom();
+    };
+    function invariant() {
+      if (ball.owner !== null) { var o = p.find(function (z) { return z.id === ball.owner; }); return !!o && o.c === ball.c && o.r === ball.r; }
+      return !p.some(function (z) { return z.c === ball.c && z.r === ball.r; });
+    }
+    function fullState() {
+      return { p: p.map(function (z) { return [z.id, z.c, z.r]; }), ball: { c: ball.c, r: ball.r, owner: ball.owner }, turn: turn, actionNo: actionNo,
+        played: playedThisTurn.slice().sort(function (a, b) { return a - b; }), lastPlayedId: lastPlayedId, kickoff: kickoffPassRequired,
+        restartPassOnlyId: restartPassOnlyId, freeKickRequiredId: freeKickRequiredId, freeKickAwardedTeam: freeKickAwardedTeam, score: score.slice() };
+    }
+    function loadState(st) {
+      cancelCpuTimer(); cpuEpoch++; cpuAutoEnabled = false;
+      p = FORMATION.map(function (d, i) { return { id: i, t: d[0], n: d[1], c: d[2], r: d[3] }; });
+      st.p.forEach(function (q) { var z = p.find(function (y) { return y.id === q[0]; }); z.c = q[1]; z.r = q[2]; });
+      ball = { c: st.ball.c, r: st.ball.r, owner: st.ball.owner }; turn = st.turn; actionNo = st.actionNo;
+      playedThisTurn = (st.played || []).slice(); lastPlayedId = st.lastPlayedId == null ? null : st.lastPlayedId;
+      kickoffPassRequired = !!st.kickoff; restartPassOnlyId = st.restartPassOnlyId == null ? null : st.restartPassOnlyId;
+      freeKickRequiredId = st.freeKickRequiredId == null ? null : st.freeKickRequiredId; freeKickAwardedTeam = st.freeKickAwardedTeam == null ? null : st.freeKickAwardedTeam;
+      score = (st.score || [0, 0]).slice();
+      matchClockActions = 0; matchClockFinished = false; halftimePending = false; halftimePaused = false;
+      goalCelebrationActive = false; pendingGoalRestartTeam = null;
+      var ov = document.getElementById('goalCelebrationOverlay'); if (ov) ov.hidden = true;
+      strategicPassHistory = []; selected = null; mode = 'player'; anim = false; simulationRandomState = null;
+      try { clearRecommendation(); } catch (e) {}
+      drawPlayers(); drawBall(); setTurn(); refresh();
+    }
+    function cand(key) { return tacticalCandidates().find(function (x) { return sequenceActionKey(x) === key; }); }
+    window.__fuTest = {
+      v98: typeof fuV98SimulateOneAction === 'function',
+      invariant: invariant, fullState: fullState, loadState: loadState,
+      busy: function () { return { anim: anim && !goalCelebrationActive, searching: cpuSearching }; },
+      id: function (t, n) { var z = p.find(function (y) { return y.t === t && y.n === n; }); return z ? z.id : null; },
+      fast: function () { animateBall = function () { return Promise.resolve(); }; animatePlayerMove = function () { return Promise.resolve(); }; animateDuel = function () { return Promise.resolve(); }; },
+      keys: function () { return tacticalCandidates().map(function (a) { return { key: sequenceActionKey(a), kind: a.kind, playerId: a.playerId, t: a.player.t, n: a.player.n, to: a.to ? { c: a.to.c, r: a.to.r } : null, opponentId: a.opponentId == null ? null : a.opponentId, duelOutcome: a.duelOutcome || null }; }); },
+      simAction: function (key, randoms) {
+        var st = captureSequenceState(), a = cand(key);
+        if (!a) { restoreSequenceState(st); return { missing: true }; }
+        simulationRandomState = null; forced = randoms.slice(); consumed = [];
+        var goals = [0, 0], result = simulateOneAction(a, goals);
+        if (result !== 'blocked') advanceSimulatedAction(result, a.playerId);
+        var fs = fullState(); fs.score = [fs.score[0] + goals[0], fs.score[1] + goals[1]];
+        var out = { result: result, consumed: consumed.slice(), state: fs, inv: invariant() };
+        forced = []; restoreSequenceState(st); simulationRandomState = null; drawPlayers(); drawBall(); refresh();
+        return out;
+      },
+      realAction: function (key, randoms) {
+        var a = cand(key); if (!a) return { missing: true };
+        forced = randoms.slice(); consumed = [];
+        var x = a.player, started = true;
+        if (x.t === CPU_TEAM) { cpuAutoEnabled = true; started = dispatchCpuAction(a); cpuAutoEnabled = false; cpuEpoch++; cancelCpuTimer(); }
+        else { selected = x.id; mode = (a.kind === 'pass' || a.kind === 'shoot') ? 'ball' : 'player';
+          if (a.kind === 'duel') duel(x, p.find(function (z) { return z.id === a.opponentId; }));
+          else if (a.kind === 'pass' || a.kind === 'shoot') moveBall(a.to.c, a.to.r); else movePlayer(a.to.c, a.to.r); }
+        return { started: !!started };
+      },
+      afterReal: function () {
+        if (goalCelebrationActive) { try { continueAfterGoal(); } catch (e) {} return { pending: true }; }
+        var out = { consumed: consumed.slice(), state: fullState(), inv: invariant(), msg: msg.textContent.slice(0, 140) }; forced = []; return out;
+      },
+      // Problema 2, prueba mínima: el patrón de la búsqueda (candidatas generadas una vez, tablero restaurado con copias).
+      staleProbe: function () {
+        var cands = tacticalCandidates(), holder = owner();
+        var carry = cands.find(function (a) { return a.kind === 'carry' && a.playerId === holder.id; });
+        var other = cands.find(function (a) { return a.kind === 'move' && a.playerId !== holder.id; });
+        if (!carry || !other) return { missing: true };
+        var root = captureSequenceState();
+        simulationRandomState = 12345; simulateOneAction(other, [0, 0]); restoreSequenceState(root);
+        simulationRandomState = 12345; var res = simulateOneAction(carry, [0, 0]);
+        var live = p.find(function (z) { return z.id === carry.playerId; });
+        var out = { result: res, to: carry.to, live: { c: live.c, r: live.r }, ball: { c: ball.c, r: ball.r, owner: ball.owner }, inv: invariant(), orphan: p.indexOf(carry.player) < 0 };
+        restoreSequenceState(root); simulationRandomState = null; drawPlayers(); drawBall(); refresh();
+        return out;
+      },
+      // Problema 2 en la búsqueda real: se instrumenta simulateOneAction mientras la CPU decide.
+      searchAudit: async function () {
+        var inner = simulateOneAction, st = { calls: 0, orphanRefs: 0, ownerMismatch: 0, looseOnPlayer: 0, lostMoves: 0 };
+        simulateOneAction = function (a, g) {
+          st.calls++; if (a && a.player && p.indexOf(a.player) < 0) st.orphanRefs++;
+          var res = inner(a, g);
+          if (ball.owner !== null) { var o = p.find(function (z) { return z.id === ball.owner; }); if (!o || o.c !== ball.c || o.r !== ball.r) st.ownerMismatch++; }
+          else if (p.some(function (z) { return z.c === ball.c && z.r === ball.r; })) st.looseOnPlayer++;
+          if (res === false && a && (a.kind === 'move' || a.kind === 'carry' || a.kind === 'collect')) { var live = p.find(function (z) { return z.id === a.playerId; }); if (!live || live.c !== a.to.c || live.r !== a.to.r) st.lostMoves++; }
+          return res;
+        };
+        cpuAutoEnabled = true; cancelCpuTimer(); var chosen = null;
+        try { chosen = await chooseCpuMove(cpuEpoch); } finally { simulateOneAction = inner; cpuSearching = false; cpuAutoEnabled = false; }
+        st.chosen = chosen ? (chosen.label || candidateLabel(chosen)) : null;
+        return st;
+      },
+      freeKickProbe: function (kickerId) {
+        var root = captureSequenceState();
+        simulationRandomState = 777;
+        var cands = tacticalCandidates();
+        var onlyKicker = cands.length > 0 && cands.every(function (a) { return a.playerId === kickerId && (a.kind === 'pass' || a.kind === 'shoot'); });
+        var pass = cands.find(function (a) { return a.kind === 'pass'; });
+        var res = pass ? simulateOneAction(pass, [0, 0]) : 'sin pase';
+        var out = { count: cands.length, onlyKicker: onlyKicker, kinds: Array.from(new Set(cands.map(function (a) { return a.kind + ':' + a.player.n; }))).slice(0, 6), result: res, cleared: freeKickRequiredId === null && freeKickAwardedTeam === null };
+        restoreSequenceState(root); simulationRandomState = null; drawPlayers(); drawBall(); refresh();
+        return out;
+      },
+      engineAudit: async function () {
+        var node = { textContent: '' };
+        await auditSimulationEngine(node, null);
+        var la = tacticalBrain.lastAudit || {};
+        return { passed: la.passed, total: la.total, failed: (la.checks || []).filter(function (c) { return !c.ok; }).map(function (c) { return c.name; }), text: node.textContent.slice(0, 300) };
+      }
+    };
+  }
+  var HOOK = ';(' + engineHook.toString() + ')();\n';
+  var MARKS = ['// ================== FIN FÚTBOL ÚNICO v97 ==================', '// ================== FIN FUTBOL UNICO v96 =================='];
+  var STORAGE = '<script>(' + installMemoryStorage.toString() + ')(window);<\/script>';
+  var stage = document.getElementById('fuGameStage');
+  var nativeAppend = stage.appendChild.bind(stage);
+  stage.appendChild = function (node) {
+    if (node && node.tagName === 'IFRAME' && node.srcdoc) {
+      var html = node.srcdoc, mark = MARKS.find(function (m) { return html.indexOf(m) >= 0; });
+      if (mark) html = html.replace(mark, HOOK + mark);
+      html = /<head[^>]*>/i.test(html) ? html.replace(/<head[^>]*>/i, function (tag) { return tag + STORAGE; }) : STORAGE + html;
+      node.srcdoc = html;
+    }
+    return nativeAppend(node);
+  };
+
+  var rows = document.getElementById('rows'), results = [], step = '';
+  function group(title) { step = title; var tr = document.createElement('tr'); tr.className = 'group'; tr.innerHTML = '<td colspan="3"></td>'; tr.firstChild.textContent = title; rows.appendChild(tr); }
+  function check(name, ok, detail) {
+    step = name; results.push({ name: name, ok: !!ok, detail: detail || '' });
+    var tr = document.createElement('tr');
+    tr.innerHTML = '<td></td><td class="res ' + (ok ? 'ok' : 'bad') + '">' + (ok ? 'CORRECTO' : 'FALLA') + '</td><td class="det"></td>';
+    tr.children[0].textContent = name; tr.children[2].textContent = detail || ''; rows.appendChild(tr);
+  }
+  var sleep = function (ms) { return new Promise(function (r) { setTimeout(r, ms); }); };
+  var F = null;
+  async function idle() {
+    var t0 = Date.now(), since = null;
+    while (Date.now() - t0 < 60000) { var b = F.busy(); if (!b.anim && !b.searching) { since = since || Date.now(); if (Date.now() - since > 30) return; } else since = null; await sleep(10); }
+    throw new Error('El motor no quedó en reposo en: ' + step);
+  }
+  async function realRun(key, randoms) {
+    var r0 = F.realAction(key, randoms); if (r0.missing) return { missing: true };
+    await sleep(2); await idle();
+    var r = F.afterReal(); if (r.pending) { await sleep(2); await idle(); r = F.afterReal(); }
+    return r;
+  }
+  function xs(seed) { var x = (seed >>> 0) || 0x9e3779b9; return function () { x ^= x << 13; x >>>= 0; x ^= x >>> 17; x ^= x << 5; x >>>= 0; return x / 4294967296; }; }
+  var FIELDS = ['ball', 'turn', 'actionNo', 'played', 'lastPlayedId', 'kickoff', 'restartPassOnlyId', 'freeKickRequiredId', 'freeKickAwardedTeam', 'score', 'p'];
+  async function compare(st, key, randoms) {
+    F.loadState(st); var sim = F.simAction(key, randoms);
+    F.loadState(st); var real = await realRun(key, randoms);
+    if (sim.missing || real.missing) return { missing: true };
+    var start = JSON.stringify(Object.assign({}, st, { played: st.played.slice().sort(function (a, b) { return a - b; }) }));
+    var realBlocked = JSON.stringify(real.state) === start, diffs = [];
+    if ((sim.result === 'blocked') !== realBlocked) diffs.push('bloqueo');
+    if (!(sim.result === 'blocked' && realBlocked)) FIELDS.forEach(function (f) { if (JSON.stringify(sim.state[f]) !== JSON.stringify(real.state[f])) diffs.push(f === 'p' ? 'posiciones' : f); });
+    if (JSON.stringify(sim.consumed) !== JSON.stringify(real.consumed)) diffs.push('tiradas');
+    return { diffs: diffs, sim: sim, real: real };
+  }
+  var fmt = function (b) { return '(' + b.c + ',' + b.r + ')' + (b.owner === null ? ' suelta' : ' de id ' + b.owner); };
+
+  async function run() {
+    var iframe = null;
+    for (var i = 0; i < 400 && !(iframe && iframe.contentWindow && iframe.contentWindow.__fuTest && iframe.contentDocument.querySelector('rect.cell')); i++) { iframe = stage.querySelector('iframe'); await sleep(100); }
+    if (!iframe || !iframe.contentWindow.__fuTest) throw new Error('No se pudo cargar el motor del partido.');
+    if (window.__fuStorageIsolated !== true || iframe.contentWindow.__fuStorageIsolated !== true)
+      throw new Error('No se pudo aislar el almacenamiento del navegador; la prueba no se ejecutó para no modificar datos guardados.');
+    F = iframe.contentWindow.__fuTest; F.fast();
+    document.getElementById('v98').textContent = 'Simulación coherente v98 instalada: ' + (F.v98 ? 'sí' : 'no');
+    await sleep(300);
+    var base = F.fullState(); // formación inicial: Equipo 1 #10 en (8,5) y Equipo 2 #10 en (9,5)
+    function layout(changes, ballOwnerId, turnTeam) {
+      var st = JSON.parse(JSON.stringify(base));
+      changes.forEach(function (ch) { st.p.forEach(function (q) { if (q[0] === ch[0]) { q[1] = ch[1]; q[2] = ch[2]; } }); });
+      var o = st.p.find(function (q) { return q[0] === ballOwnerId; });
+      st.ball = { c: o[1], r: o[2], owner: ballOwnerId }; st.turn = turnTeam; st.actionNo = 1; st.played = []; st.lastPlayedId = null;
+      st.kickoff = false; st.restartPassOnlyId = null; st.freeKickRequiredId = null; st.freeKickAwardedTeam = null; st.score = [0, 0];
+      return st;
+    }
+    function freeCell(st, c, r) { return !st.p.some(function (q) { return q[1] === c && q[2] === r; }); }
+
+    group('1. Disputa por atrás con la casilla preferida ocupada (problema 1)');
+    var t1_10 = F.id(1, 10), t2_10 = F.id(2, 10), t1_9 = F.id(1, 9), t2_9 = F.id(2, 9);
+    var duelScenarios = [
+      { team: 2, owner: t1_10, defender: t2_9, at: [7, 5], expected: { c: 9, r: 4 } },
+      { team: 1, owner: t2_10, defender: t1_9, at: [10, 5], expected: { c: 8, r: 4 } }
+    ];
+    for (var d = 0; d < duelScenarios.length; d++) {
+      var sc = duelScenarios[d], who = sc.team === 2 ? 'CPU defiende' : 'humano defiende';
+      var stD = layout([[sc.defender, sc.at[0], sc.at[1]]], sc.owner, sc.team);
+      var ownerCell = stD.p.find(function (q) { return q[0] === sc.owner; });
+      F.loadState(stD);
+      var duelKey = F.keys().find(function (k) { return k.kind === 'duel' && k.playerId === sc.defender && k.opponentId === sc.owner; });
+      var preferredBusy = !freeCell(stD, ownerCell[1] + (ownerCell[1] - sc.at[0]), ownerCell[2]);
+      check('[' + who + '] Hay una disputa por atrás legal y la casilla siguiente al poseedor está ocupada', !!duelKey && duelKey.duelOutcome === 'atras' && preferredBusy, duelKey ? 'disputa ' + duelKey.duelOutcome + ' del id ' + sc.defender + ' contra el id ' + sc.owner : 'sin disputa');
+      if (!duelKey) continue;
+      var cmp = await compare(stD, duelKey.key, [0.99, 0.5, 0.5, 0.5]);
+      check('[' + who + '] La simulación deja la pelota donde la deja el motor real, en una casilla libre', cmp.diffs && !cmp.diffs.length && cmp.sim.inv && cmp.sim.state.ball.owner === null && cmp.real.state.ball.c === sc.expected.c && cmp.real.state.ball.r === sc.expected.r,
+        'simulación ' + fmt(cmp.sim.state.ball) + (cmp.sim.inv ? '' : ' sobre una ficha') + ' · real ' + fmt(cmp.real.state.ball) + (cmp.diffs.length ? ' · difiere en ' + cmp.diffs.join(', ') : ''));
+    }
+
+    group('2. Referencias huérfanas en la búsqueda (problema 2)');
+    var stS = layout([[F.id(2, 6), 11, 5]], F.id(2, 6), 2);
+    F.loadState(stS);
+    var probe = F.staleProbe();
+    check('Después de restaurar el tablero, una conducción de una candidata ya generada mueve a la ficha viva con la pelota', !probe.missing && probe.result === false && probe.inv && probe.live.c === probe.to.c && probe.live.r === probe.to.r && probe.ball.c === probe.to.c && probe.ball.r === probe.to.r,
+      probe.missing ? 'sin candidatas' : 'destino (' + probe.to.c + ',' + probe.to.r + ') · ficha viva en (' + probe.live.c + ',' + probe.live.r + ') · pelota ' + fmt(probe.ball) + (probe.orphan ? ' · la candidata apuntaba a un objeto fuera del tablero' : ''));
+    // Dos decisiones completas: la CPU con la pelota y la CPU defendiendo cerca de su arco.
+    var audit = { calls: 0, orphanRefs: 0, ownerMismatch: 0, looseOnPlayer: 0, lostMoves: 0, chosen: [] };
+    var stDef = layout([[F.id(1, 9), 13, 4], [F.id(1, 11), 12, 7]], F.id(1, 9), 2);
+    var searchStates = [stS, stDef];
+    for (var ss = 0; ss < searchStates.length; ss++) {
+      F.loadState(searchStates[ss]);
+      var one = await F.searchAudit();
+      ['calls', 'orphanRefs', 'ownerMismatch', 'looseOnPlayer', 'lostMoves'].forEach(function (k) { audit[k] += one[k]; });
+      audit.chosen.push(one.chosen || '—');
+    }
+    check('Durante dos decisiones completas de la CPU, ningún estado simulado tiene la pelota fuera de lugar', audit.ownerMismatch === 0 && audit.looseOnPlayer === 0,
+      audit.calls + ' simulaciones · pelota con dueño fuera de su casilla: ' + audit.ownerMismatch + ' · pelota suelta sobre una ficha: ' + audit.looseOnPlayer);
+    check('Cada movimiento simulado se aplica a la ficha viva del tablero', audit.lostMoves === 0,
+      'movimientos sin efecto: ' + audit.lostMoves + ' · candidatas con referencia huérfana recibidas: ' + audit.orphanRefs + ' · jugadas elegidas: ' + audit.chosen.join(' / '));
+
+    group('3. Casos conocidos de la prueba diferencial (estado, jugada y tiradas exactas)');
+    for (var k = 0; k < CASES.length; k++) {
+      var cs = CASES[k], cc = await compare(cs.state, cs.key, cs.randoms);
+      check(cs.cat + ' · ' + cs.kind + ' ' + cs.key.split('|').slice(1, 4).join(' '), !cc.missing && !cc.diffs.length,
+        cc.missing ? 'la jugada ya no es candidata en ese estado' : 'simulación ' + fmt(cc.sim.state.ball) + ' t' + cc.sim.state.turn + '/' + cc.sim.state.actionNo + ' · real ' + fmt(cc.real.state.ball) + ' t' + cc.real.state.turn + '/' + cc.real.state.actionNo + (cc.diffs.length ? ' · difiere en ' + cc.diffs.join(', ') : ''));
+    }
+
+    group('4. Muestra diferencial: todas las jugadas complejas de cada estado');
+    var rng = xs(9001), totals = { acciones: 0, distintas: 0, porTipo: {} };
+    for (var s = 0; s < CASES.length; s++) {
+      F.loadState(CASES[s].state);
+      var ks = F.keys(), complex = ks.filter(function (x) { return ['pass', 'shoot', 'duel', 'collect'].indexOf(x.kind) >= 0; });
+      var passes = complex.filter(function (x) { return x.kind === 'pass'; }).sort(function () { return rng() - 0.5; }).slice(0, 10);
+      var pick = complex.filter(function (x) { return x.kind !== 'pass'; }).concat(passes, ks.filter(function (x) { return x.kind === 'move' || x.kind === 'carry'; }).slice(0, 2));
+      var bad = 0;
+      for (var j = 0; j < pick.length; j++) {
+        var rr = []; for (var q = 0; q < 12; q++) rr.push(rng());
+        var res = await compare(CASES[s].state, pick[j].key, rr);
+        if (res.missing) continue;
+        totals.acciones++; totals.porTipo[pick[j].kind] = (totals.porTipo[pick[j].kind] || 0) + 1;
+        if (res.diffs.length) { bad++; totals.distintas++; }
+      }
+    }
+    check('Simulación y motor real coinciden en estado y tiradas en toda la muestra', totals.acciones > 100 && totals.distintas === 0,
+      totals.acciones + ' acciones (' + Object.keys(totals.porTipo).map(function (t) { return t + ' ' + totals.porTipo[t]; }).join(', ') + ') · distintas: ' + totals.distintas);
+
+    group('5. Tiro libre obligatorio dentro de la simulación');
+    var fkCase = CASES.find(function (c) { return c.state.freeKickRequiredId !== null; });
+    if (fkCase) {
+      F.loadState(fkCase.state);
+      var fk = F.freeKickProbe(fkCase.state.freeKickRequiredId);
+      check('Con un tiro libre pendiente, la búsqueda solo considera pase o remate del ejecutante', fk.onlyKicker, fk.count + ' candidatas · ' + fk.kinds.join(', '));
+      check('Ejecutado el tiro libre, la obligación queda limpia como en el partido', fk.result !== 'blocked' && fk.cleared, 'resultado ' + fk.result + ' · obligación ' + (fk.cleared ? 'limpia' : 'pendiente'));
+    } else check('Hay un estado con tiro libre pendiente', false, 'no se encontró');
+
+    group('6. Auditoría interna del motor de partidos');
+    F.loadState(base);
+    var ea = await F.engineAudit();
+    // Dos comprobaciones de la auditoría v95 ya fallaban en 901c62b: esperan un pase con 100% de precisión
+    // y una amenaza directa del 99%, que el tope de precisión y la curva de remate de v96 ya no producen.
+    var KNOWN = ['El motor acepta el pase de saque inicial de la CPU', 'La cobertura reduce un remate directo peligroso'];
+    var unexpected = ea.failed.filter(function (n) { return KNOWN.indexOf(n) < 0; });
+    check('La auditoría del motor no registra fallas nuevas', ea.total > 0 && unexpected.length === 0 && ea.passed >= ea.total - KNOWN.length,
+      ea.passed + '/' + ea.total + (unexpected.length ? ' · fallas nuevas: ' + unexpected.join('; ') : '') + (ea.failed.length - unexpected.length ? ' · anteriores a v98: ' + ea.failed.filter(function (n) { return KNOWN.indexOf(n) >= 0; }).join('; ') : ''));
+
+    var failed = results.filter(function (x) { return !x.ok; }).length;
+    finish(failed === 0, results.length - failed, failed);
+  }
+  function finish(ok, passed, failed, error) {
+    var st = document.getElementById('state');
+    st.textContent = ok ? 'CORRECTO' : 'FALLA'; st.className = 'pill ' + (ok ? 'ok' : 'bad');
+    document.getElementById('totals').textContent = error ? 'Error: ' + error : passed + ' comprobaciones correctas, ' + failed + ' con falla';
+    document.title = (ok ? 'OK · ' : 'FALLA · ') + document.title;
+    window.__FU_REGRESSION_RESULT = { ok: ok, passed: passed, failed: failed, v98: !!(F && F.v98), error: error || null, results: results };
+  }
+  window.addEventListener('load', function () { run().catch(function (e) { finish(false, results.filter(function (x) { return x.ok; }).length, results.filter(function (x) { return !x.ok; }).length + 1, String(e && e.message || e)); }); });
+})();
+</script>
+</body>
+</html>

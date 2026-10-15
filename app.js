@@ -2106,6 +2106,177 @@ const V98_ENGINE_FIXES = String.raw`
  // ================== FIN FÚTBOL ÚNICO v98 · CORRECCIONES DEL MOTOR ==================
 `;
 
+// v98 · Fase 1 de IA: coherencia de la simulación predictiva de la CPU con el motor real.
+// Solo cambia la simulación con la que la CPU evalúa jugadas (simulateOneAction y sus reinicios).
+// El partido real, sus reglas, probabilidades y cronómetro no cambian.
+const V98_SIM_COHERENCE = String.raw`
+ // ==================== FÚTBOL ÚNICO v98 · SIMULACIÓN COHERENTE ====================
+ // Problemas corregidos (verificados con una prueba diferencial simulación ↔ motor real):
+ //  1. Referencias huérfanas: la búsqueda genera las candidatas una vez por nodo y restaura el tablero
+ //     con copias nuevas después de cada rama; desde la segunda candidata, la acción movía un objeto
+ //     jugador que ya no estaba en el tablero y escribía la pelota con su id (pelota con dueño fuera de
+ //     la casilla del dueño, movimientos sin efecto). Ahora la acción se aplica a la ficha viva por id.
+ //  2. Disputa por atrás: findFreeCellNear(r,[x,r]) podía dejar la pelota suelta en la casilla del rival.
+ //     Ahora se usa la misma elección que duel(): casilla siguiente o anillo libre ordenado por dirección.
+ //  3. Pases y remates: el orden de resolución replica moveBall() (intercepción sobre la trayectoria
+ //     desviada, validez de la casilla de gol, atajada antes del remate desviado afuera, gol de un pase
+ //     desviado al arco, saque de arco como reinicio y limpieza del tiro libre ejecutado).
+ //  4. La disputa comprueba que sea ejecutable antes de sortear la falta, igual que duel().
+ // Cada rama consume las mismas tiradas, en el mismo orden, que el motor real (tacticalRandom).
+ function fuV98BackDuelLooseCell(a,r,dc,dr){
+  const preferred={c:r.c+dc,r:r.r+dr};
+  if(preferred.c>=0&&preferred.c<C&&preferred.r>=0&&preferred.r<R&&!at(preferred.c,preferred.r,a.id)&&!at(preferred.c,preferred.r,r.id))return preferred;
+  const choices=[];
+  for(let rr=0;rr<R;rr++)for(let cc=0;cc<C;cc++){
+   if(at(cc,rr,a.id)||at(cc,rr,r.id))continue;
+   if(Math.max(Math.abs(cc-r.c),Math.abs(rr-r.r))!==1)continue;
+   choices.push({c:cc,r:rr,score:(cc-r.c)*dc+(rr-r.r)*dr});
+  }
+  choices.sort((u,v)=>v.score-u.score);
+  return choices[0]?{c:choices[0].c,r:choices[0].r}:null;
+ }
+ // goalTargets() con el ejecutante explícito (la versión visible usa la ficha seleccionada en pantalla).
+ function fuV98GoalTargetsFor(x,side){
+  const targetC=side==='L'?0:C-1;
+  const gk=p.find(z=>z.t!==x.t&&z.n===1),out=[];
+  for(let r=4;r<=6;r++){
+   const dx=targetC-ball.c,dy=r-ball.r;
+   if(!bLegalFor(targetC,r,x))continue;
+   let blocked=false;const steps=Math.max(Math.abs(dx),Math.abs(dy));
+   if(gk){for(let i=1;i<=steps;i++){const xx=ball.c+dx*i/steps,yy=ball.r+dy*i/steps;if(Math.hypot(gk.c-xx,gk.r-yy)<.46){blocked=true;break;}}}
+   if(!blocked)out.push(r);
+  }
+  return out;
+ }
+ // Espejo de movePlayer(): mismas validaciones y consecuencias (conducir, recoger, disputar al poseedor).
+ function fuV98SimMove(x,c,r){
+  if(freeKickRequiredId!==null&&freeKickAwardedTeam===turn&&actionNo===1)return 'blocked';
+  if(kickoffPassRequired)return 'blocked';
+  if(ball.owner===x.id&&restartPassOnlyId===x.id)return 'blocked';
+  if(isOffsideMove(c,x))return 'blocked';
+  if(!pLegal(c,r,x))return 'blocked';
+  const o=at(c,r,x.id);
+  if(o){if(o.t!==x.t&&o.id===ball.owner)return fuV98SimDuel(x,o);return 'blocked';}
+  const hadBall=ball.owner===x.id;
+  x.c=c;x.r=r;
+  if(hadBall)ball={c,r,owner:x.id};
+  else if(ball.owner===null&&ball.c===c&&ball.r===r)ball={c,r,owner:x.id};
+  return false;
+ }
+ // Espejo de duel(): primero se verifica que la maniobra sea ejecutable; después se sortea la falta.
+ function fuV98SimDuel(a,r){
+  if(freeKickRequiredId!==null&&freeKickAwardedTeam===turn&&actionNo===1)return 'blocked';
+  if(r.n===1&&ball.owner===r.id)return 'blocked';
+  const dc=r.c-a.c,dr=r.r-a.r;
+  if(Math.abs(dc)>1||Math.abs(dr)>1||(!dc&&!dr))return 'blocked';
+  const diagonal=Math.abs(dc)===1&&Math.abs(dr)===1;
+  if(diagonal&&a.n!==5)return 'blocked';
+  const tipo=diagonal?'costado':duelType(a,r);
+  const resultado=tipo==='costado'&&[2,6].includes(a.n)?'frente':tipo;
+  let q=null,loose=null;
+  if(resultado==='frente'){q=findDisplacement(r,dc,dr,a.id);if(!q)return 'blocked';}
+  else if(resultado==='costado'){q=findDisplacement(r,dc,dr,a.id);if(!q)return 'blocked';loose=findLooseBallCell(a,r,dc,dr,{c:r.c,r:r.r});if(!loose)return 'blocked';}
+  else{q=findDisplacementFrom({c:a.c,r:a.r},-dc,-dr,a.id);if(!q)return 'blocked';loose=fuV98BackDuelLooseCell(a,r,dc,dr);if(!loose)return 'blocked';}
+  const foulChance=tipo==='atras'?.60:tipo==='costado'?.30:0;
+  if(foulChance>0&&tacticalRandom()<foulChance){
+   // Mismas consecuencias que prepareFreeKick(): falta rápida para el equipo del jugador derribado.
+   const spot={c:r.c,r:r.r},quick=createQuickFoulMoves(r.t,r,spot,a);
+   for(const z of p){const t=quick.layout.get(z.id);if(t){z.c=t.c;z.r=t.r;}}
+   r.c=spot.c;r.r=spot.r;ball={c:spot.c,r:spot.r,owner:r.id};
+   turn=r.t;actionNo=1;lastPlayedId=null;playedThisTurn=[];restartPassOnlyId=null;
+   freeKickRequiredId=r.id;freeKickAwardedTeam=r.t;
+   return true;
+  }
+  if(resultado==='frente'){a.c=r.c;a.r=r.r;r.c=q.c;r.r=q.r;ball={c:a.c,r:a.r,owner:a.id};return false;}
+  if(resultado==='costado'){a.c=r.c;a.r=r.r;r.c=q.c;r.r=q.r;ball={c:loose.c,r:loose.r,owner:null};return false;}
+  a.c=q.c;a.r=q.r;ball={c:loose.c,r:loose.r,owner:null};return false;
+ }
+ // Espejo de moveBall(): validaciones, precisión, trayectoria desviada, intercepción, arquero, gol y pase.
+ function fuV98SimBall(x,c,r,goals){
+  if(freeKickRequiredId!==null&&freeKickAwardedTeam===turn&&actionNo===1&&x.id!==freeKickRequiredId)return 'blocked';
+  if(kickoffPassRequired){
+   const intendedReceiver=at(c,r,x.id);
+   if(!isKickoffKicker(x)||!intendedReceiver||intendedReceiver.t!==x.t)return 'blocked';
+  }
+  if(ball.owner!==x.id||!bLegalFor(c,r,x))return 'blocked';
+  if(restartPassOnlyId===x.id&&((x.t===1&&c===C-1&&r>=4&&r<=6)||(x.t===2&&c===0&&r>=4&&r<=6)))return 'blocked';
+  const from={c:ball.c,r:ball.r,owner:ball.owner};
+  let path=passPathCells(from,{c,r}),firstRival=firstTrajectoryRival(path,x.t);
+  if(firstRival&&firstRival.index===0)return 'blocked';
+  const intendedTarget={c,r},intendedShotTarget=!!goalSideForCell(c,r,x.t);
+  const accuracy=resolveAccuracy(x,{c,r});
+  c=accuracy.target.c;r=accuracy.target.r;
+  path=passPathCells(from,{c,r});firstRival=firstTrajectoryRival(path,x.t);
+  if(c<0||c>=C||r<0||r>=R){
+   kickoffPassRequired=false;clearFreeKickRequirement(x.id);
+   simulateExit({c,r},x.t);
+   return true;
+  }
+  if(!intendedShotTarget&&passBeyondOffsideLine(c,x))return 'blocked';
+  const intendedReceiver=at(c,r);
+  if(!intendedShotTarget&&intendedReceiver&&intendedReceiver.t===x.t&&isOffsidePosition(intendedReceiver))return 'blocked';
+  const goalSide=goalSideForCell(c,r,x.t);
+  if(goalSide&&!intendedShotTarget&&!fuV98GoalTargetsFor(x,goalSide).includes(r))return 'blocked';
+  if(firstRival&&firstRival.index>0&&firstRival.index<path.length-1){
+   const interceptor=firstRival.player;
+   const interceptionChance=[2,6].includes(interceptor.n)?0.75:interceptor.n===5?0.65:0.5;
+   if(tacticalRandom()<interceptionChance){
+    const loose=deflectionCell(interceptor);
+    kickoffPassRequired=false;clearFreeKickRequirement(x.id);
+    if(restartPassOnlyId===x.id)restartPassOnlyId=null;
+    ball={c:loose.c,r:loose.r,owner:null};
+    return false;
+   }
+  }
+  if(intendedShotTarget){
+   const shotKeeper=p.find(z=>z.t!==x.t&&z.n===1);
+   if(shotKeeper&&(goalkeeperBlocksShot(x,from,{c,r},p)||(goalSideForCell(c,r,x.t)&&tacticalRandom()<fuV96KeeperSaveChance(x,from,{c,r},p)))){
+    kickoffPassRequired=false;clearFreeKickRequirement(x.id);
+    if(restartPassOnlyId===x.id)restartPassOnlyId=null;
+    ball={c:shotKeeper.c,r:shotKeeper.r,owner:shotKeeper.id};
+    return false;
+   }
+   if(!goalSide){
+    kickoffPassRequired=false;clearFreeKickRequirement(x.id);
+    if(restartPassOnlyId===x.id)restartPassOnlyId=null;
+    const defendingTeam=x.t===1?2:1;
+    simulateRestart(defendingTeam,true,defendingTeam===1?1:C-2,5);
+    return true;
+   }
+  }
+  if(goalSide){
+   kickoffPassRequired=false;clearFreeKickRequirement(x.id);
+   return simulateScoreGoal(x.t,goals);
+  }
+  const receiver=at(c,r,x.id);
+  const rest=!receiver&&(at(c,r)||{}).id===x.id&&typeof fuV98ShortPassRestCell==='function'?fuV98ShortPassRestCell(x,from,intendedTarget):null;
+  if(rest){c=rest.c;r=rest.r;}
+  kickoffPassRequired=false;clearFreeKickRequirement(x.id);
+  if(receiver&&receiver.t===x.t)recordStrategicPass(x,receiver,{c:from.c,r:from.r},{c,r});
+  ball={c,r,owner:receiver?receiver.id:null};
+  if(restartPassOnlyId===x.id)restartPassOnlyId=null;
+  return false;
+ }
+ function fuV98SimulateOneAction(a,goals){
+  if(!a)return 'blocked';
+  // La acción se aplica siempre a las fichas vivas del tablero simulado, buscadas por id.
+  const x=p.find(z=>z.id===(a.playerId??a.player?.id));
+  if(!x||x.t!==turn)return 'blocked';
+  if(a.kind==='move'||a.kind==='carry'||a.kind==='collect')return fuV98SimMove(x,a.to.c,a.to.r);
+  if(a.kind==='duel'){const r=p.find(z=>z.id===(a.opponentId??a.opponent?.id));return r?fuV98SimDuel(x,r):'blocked';}
+  if(a.kind==='pass'||a.kind==='shoot')return fuV98SimBall(x,a.to.c,a.to.r,goals||[0,0]);
+  return 'blocked';
+ }
+ const fuV98LegacySimulateOneAction=simulateOneAction;
+ simulateOneAction=fuV98SimulateOneAction;
+ // Los reinicios simulados limpian el tiro libre, como prepareRestart() y resetToKickoff() en el partido.
+ const fuV98LegacySimulateRestart=simulateRestart;
+ simulateRestart=function(team,isGoalKick,c,r){const out=fuV98LegacySimulateRestart(team,isGoalKick,c,r);freeKickRequiredId=null;freeKickAwardedTeam=null;return out;};
+ const fuV98LegacySimulateResetToKickoff=simulateResetToKickoff;
+ simulateResetToKickoff=function(kickTeam){const out=fuV98LegacySimulateResetToKickoff(kickTeam);freeKickRequiredId=null;freeKickAwardedTeam=null;return out;};
+ // ================== FIN FÚTBOL ÚNICO v98 · SIMULACIÓN COHERENTE ==================
+`;
+
 (() => {
   "use strict";
   const BASELINE_COMMIT = "d62eae16f15984cdb4397b93d8c4a34e89392efd";
@@ -2433,6 +2604,17 @@ const V98_ENGINE_FIXES = String.raw`
     return html;
   }
 
+  // v98 · Fase 1 de IA: en la simulación de la CPU también rige el tiro libre obligatorio.
+  function patchSimulationFreeKick(html, report) {
+    return replaceOnce(
+      html,
+      "  if(freeKickRequiredId!==null&&freeKickAwardedTeam===turn&&actionNo===1&&simulationRandomState===null){",
+      "  if(freeKickRequiredId!==null&&freeKickAwardedTeam===turn&&actionNo===1){",
+      "v98: la simulación de la CPU respeta el tiro libre obligatorio",
+      report,
+    );
+  }
+
   function patchTournamentCpuProfiles(html, report) {
     html = replaceOnce(
       html,
@@ -2553,12 +2735,17 @@ function ensureCpuProfiles(){if(!state)return;const seed=(state.selectedClubId||
     let engineFixes = "";
     try { new Function(V98_ENGINE_FIXES); engineFixes = V98_ENGINE_FIXES; report.patches.push("sintaxis JavaScript v98 (correcciones del motor) verificada"); }
     catch (error) { report.warnings.push(`La capa v98 de correcciones del motor no superó el control de sintaxis y no se instaló: ${String(error)}`); }
+    // Fase 1 de IA: simulación coherente. Si no superara el control de sintaxis, la CPU sigue con la de v96.
+    let simCoherence = "";
+    try { new Function(V98_SIM_COHERENCE); simCoherence = V98_SIM_COHERENCE; report.patches.push("sintaxis JavaScript v98 (simulación coherente) verificada"); }
+    catch (error) { report.warnings.push(`La capa v98 de simulación coherente no superó el control de sintaxis y no se instaló: ${String(error)}`); }
     const finalIife = html.lastIndexOf("})();");
     if (finalIife < 0) { report.warnings.push("No se encontró el cierre del motor para instalar v96."); return html; }
     report.patches.push("motor táctico v96");
     if (engineFixes) report.patches.push("correcciones del motor v98");
+    if (simCoherence) report.patches.push("simulación coherente de la CPU v98");
     if (visualPatch) { report.visualLayer = true; report.patches.push("rediseño visual del partido v97"); }
-    return `${html.slice(0, finalIife)}\n${V96_ENGINE_PATCH}\n${engineFixes}\n${visualPatch}\n${html.slice(finalIife)}`;
+    return `${html.slice(0, finalIife)}\n${V96_ENGINE_PATCH}\n${engineFixes}\n${simCoherence}\n${visualPatch}\n${html.slice(finalIife)}`;
   }
   async function loadGamePage(requestedPage) {
     const sourcePath = PAGE_PATHS[requestedPage];
@@ -2574,7 +2761,7 @@ function ensureCpuProfiles(){if(!state)return;const seed=(state.selectedClubId||
     if (requestedPage === "tournament") html = patchTournamentCpuProfiles(html, report);
     html = patchInternalNavigation(html, report);
     html = patchEmbeddedLocation(html, report);
-    if (enginePage) { html = patchSimulationParity(html, report); html = patchProgressiveActionResolution(html, report); html = patchShortPassLooseBall(html, report); html = injectEnginePatch(html, report); }
+    if (enginePage) { html = patchSimulationParity(html, report); html = patchProgressiveActionResolution(html, report); html = patchShortPassLooseBall(html, report); html = patchSimulationFreeKick(html, report); html = injectEnginePatch(html, report); }
     const baseHref = new URL(`baseline/${PAGE_BASES[requestedPage]}`, BASE).href;
     html = injectBeforeClosingTag(html, "</head>", `<base href="${baseHref}"><style id="fu-v96-visual-layer">${enginePage ? V96_GAME_STYLES : V96_SHELL_STYLES}</style>`);
     // Estilos del rediseño v97: sólo en la pantalla de partido y sólo si su capa JS quedó instalada.

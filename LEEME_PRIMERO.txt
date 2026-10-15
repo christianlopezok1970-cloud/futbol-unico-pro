@@ -43,3 +43,11 @@ jugadas; no usa azar adicional ni cambia reglas, probabilidades, IA, cronómetro
 Prueba de regresión: pruebas/regresion-pase-corto.html, abierta desde el mismo servidor que el juego (no como
 archivo local). Ejecuta el motor real con 34 comprobaciones para el equipo humano y la CPU en situaciones
 espejadas, con el almacenamiento aislado en memoria. La carpeta pruebas no es necesaria para publicar el juego.
+
+IA v98 · Fase 1 (simulación coherente): la CPU elige sus jugadas simulando secuencias con simulateOneAction, y esa
+simulación no coincidía con el motor real. En la búsqueda, desde la segunda candidata de cada nodo las acciones
+movían fichas que ya no estaban en el tablero (pelota con dueño fuera de su casilla, movimientos sin efecto); la
+disputa por atrás podía dejar la pelota suelta sobre el rival; en pases y remates la intercepción se calculaba sobre
+la trayectoria elegida en vez de la desviada, el remate desviado afuera dejaba mal el turno y el tiro libre no se
+limpiaba. Ahora la simulación replica movePlayer, duel y moveBall con las mismas tiradas y en el mismo orden (capa
+V98_SIM_COHERENCE de app.js). El partido real no cambia. Prueba: pruebas/regresion-simulacion-cpu.html.
