@@ -2277,6 +2277,64 @@ const V98_SIM_COHERENCE = String.raw`
  // ================== FIN FÚTBOL ÚNICO v98 · SIMULACIÓN COHERENTE ==================
 `;
 
+// v98 · Fase 2 de IA: decisiones de la CPU. No cambia reglas, probabilidades ni el partido real: solo cómo
+// la CPU valora las posiciones y elige entre jugadas legales, con la misma información que ve el jugador.
+const V98_AI_PATCH = String.raw`
+ // ==================== FÚTBOL ÚNICO v98 · IA (FASE 2) ====================
+ // Cada mejora tiene su interruptor para poder medirla por separado; con enabled=false la CPU decide como antes.
+ const fuV98Ai={enabled:true,risk:true,shots:true,anticipation:true,variety:true,varietyMargin:4};
+ // ---- Memoria de cálculos del mismo estado (no cambia resultados: mismas funciones, mismas posiciones) ----
+ function fuV98StateKey(){let k=ball.c+','+ball.r+','+ball.owner+'|';for(const z of p)k+=z.c+','+z.r+';';return k;}
+ let fuV98ThreatKey=null,fuV98ThreatValue=null,fuV98AttackKey=null,fuV98AttackValue=null;
+ const fuV98PrevThreatOptions=fuV96ThreatOptions;
+ fuV96ThreatOptions=function(playersState=p,carrierId=ball.owner){
+  if(playersState!==p||carrierId!==ball.owner)return fuV98PrevThreatOptions(playersState,carrierId);
+  const key=fuV98StateKey();
+  if(key!==fuV98ThreatKey){fuV98ThreatValue=fuV98PrevThreatOptions(playersState,carrierId);fuV98ThreatKey=key;}
+  return fuV98ThreatValue;
+ };
+ const fuV98PrevAttackingThreat=estimateAttackingThreat;
+ estimateAttackingThreat=function(playersState=p,carrierId=ball.owner){
+  if(playersState!==p||carrierId!==ball.owner)return fuV98PrevAttackingThreat(playersState,carrierId);
+  const key=fuV98StateKey();
+  if(key!==fuV98AttackKey){fuV98AttackValue=fuV98PrevAttackingThreat(playersState,carrierId);fuV98AttackKey=key;}
+  return fuV98AttackValue;
+ };
+
+ // ======== Etapa 2a ========
+ // ---- 1. Riesgo según marcador y tiempo restante (solo datos públicos: marcador y reloj) ----
+ // En el último 40% del partido, perdiendo por uno o dos la CPU valora más un gol propio y su amenaza
+ // ofensiva que el riesgo de recibir otro; ganando por uno o dos, prioriza no conceder y conservar la pelota.
+ function fuV98RiskContext(){
+  const total=MATCH_GAME_ACTIONS||360,left=Math.max(0,total-matchClockActions),frac=left/total;
+  const diff=score[CPU_TEAM-1]-score[HUMAN_TEAM-1];
+  const u=Math.max(0,Math.min(1,(0.40-frac)/0.40));
+  const ctx={goalFor:1,goalAgainst:1,threatFor:1,threatAgainst:1,keepBall:0,push:0,urgency:u,diff};
+  if(u<=0||diff===0||Math.abs(diff)>=3)return ctx;
+  const k=Math.abs(diff)===1?1:0.65;
+  if(diff<0){ctx.goalFor=1+0.45*u*k;ctx.goalAgainst=1-0.30*u*k;ctx.threatFor=1+0.35*u*k;ctx.threatAgainst=1-0.20*u*k;ctx.push=u*k;}
+  else{ctx.goalFor=1-0.20*u*k;ctx.goalAgainst=1+0.45*u*k;ctx.threatFor=1-0.15*u*k;ctx.threatAgainst=1+0.40*u*k;ctx.keepBall=u*k;}
+  return ctx;
+ }
+ const fuV98PrevEvaluate=evaluateSequencePosition;
+ evaluateSequencePosition=function(rootTeam,goalDiff){
+  let value=fuV98PrevEvaluate(rootTeam,goalDiff);
+  if(!fuV98Ai.enabled||!fuV98Ai.risk||rootTeam!==CPU_TEAM)return value;
+  const ctx=fuV98RiskContext();
+  if(ctx.urgency<=0||ctx.goalFor===1&&ctx.goalAgainst===1)return value;
+  value+=(goalDiff[CPU_TEAM-1]||0)*320*(ctx.goalFor-1)-(goalDiff[HUMAN_TEAM-1]||0)*320*(ctx.goalAgainst-1);
+  const holder=owner();
+  if(holder){
+   const threat=estimateAttackingThreat(p,holder.id).probability;
+   if(holder.t===CPU_TEAM)value+=threat*145*(ctx.threatFor-1)+ctx.keepBall*8+ctx.push*attackingProgress(CPU_TEAM,ball.c)*10;
+   else value-=threat*145*(ctx.threatAgainst-1)+ctx.keepBall*8;
+  }
+  return value;
+ };
+
+ // ================== FIN FÚTBOL ÚNICO v98 · IA (FASE 2) ==================
+`;
+
 (() => {
   "use strict";
   const BASELINE_COMMIT = "d62eae16f15984cdb4397b93d8c4a34e89392efd";
@@ -2739,13 +2797,20 @@ function ensureCpuProfiles(){if(!state)return;const seed=(state.selectedClubId||
     let simCoherence = "";
     try { new Function(V98_SIM_COHERENCE); simCoherence = V98_SIM_COHERENCE; report.patches.push("sintaxis JavaScript v98 (simulación coherente) verificada"); }
     catch (error) { report.warnings.push(`La capa v98 de simulación coherente no superó el control de sintaxis y no se instaló: ${String(error)}`); }
+    // Fase 2 de IA: decisiones de la CPU. Requiere la simulación coherente; sin ella, la CPU decide como en v96.
+    let aiPatch = "";
+    if (simCoherence) {
+      try { new Function(V98_AI_PATCH); aiPatch = V98_AI_PATCH; report.patches.push("sintaxis JavaScript v98 (IA fase 2) verificada"); }
+      catch (error) { report.warnings.push(`La capa v98 de IA no superó el control de sintaxis y no se instaló: ${String(error)}`); }
+    }
     const finalIife = html.lastIndexOf("})();");
     if (finalIife < 0) { report.warnings.push("No se encontró el cierre del motor para instalar v96."); return html; }
     report.patches.push("motor táctico v96");
     if (engineFixes) report.patches.push("correcciones del motor v98");
     if (simCoherence) report.patches.push("simulación coherente de la CPU v98");
+    if (aiPatch) report.patches.push("IA de la CPU v98 (fase 2)");
     if (visualPatch) { report.visualLayer = true; report.patches.push("rediseño visual del partido v97"); }
-    return `${html.slice(0, finalIife)}\n${V96_ENGINE_PATCH}\n${engineFixes}\n${simCoherence}\n${visualPatch}\n${html.slice(finalIife)}`;
+    return `${html.slice(0, finalIife)}\n${V96_ENGINE_PATCH}\n${engineFixes}\n${simCoherence}\n${aiPatch}\n${visualPatch}\n${html.slice(finalIife)}`;
   }
   async function loadGamePage(requestedPage) {
     const sourcePath = PAGE_PATHS[requestedPage];

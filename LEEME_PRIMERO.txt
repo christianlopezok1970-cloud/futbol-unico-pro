@@ -51,3 +51,9 @@ disputa por atrás podía dejar la pelota suelta sobre el rival; en pases y rema
 la trayectoria elegida en vez de la desviada, el remate desviado afuera dejaba mal el turno y el tiro libre no se
 limpiaba. Ahora la simulación replica movePlayer, duel y moveBall con las mismas tiradas y en el mismo orden (capa
 V98_SIM_COHERENCE de app.js). El partido real no cambia. Prueba: pruebas/regresion-simulacion-cpu.html.
+
+IA v98 · Fase 2a (riesgo según marcador y tiempo): en el último 40% del partido la CPU ajusta cómo valora las
+posiciones según el resultado, usando solo el marcador y el reloj. Perdiendo por uno o dos valora más un gol propio y
+su amenaza ofensiva; ganando por uno o dos prioriza no conceder y conservar la pelota. Con empate o con diferencias de
+tres o más goles no cambia nada. La capa V98_AI_PATCH de app.js también guarda el mapa de amenazas de cada posición
+para no recalcularlo (mismo resultado, menos cálculo).
