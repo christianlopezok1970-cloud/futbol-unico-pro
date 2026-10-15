@@ -57,3 +57,9 @@ posiciones según el resultado, usando solo el marcador y el reloj. Perdiendo po
 su amenaza ofensiva; ganando por uno o dos prioriza no conceder y conservar la pelota. Con empate o con diferencias de
 tres o más goles no cambia nada. La capa V98_AI_PATCH de app.js también guarda el mapa de amenazas de cada posición
 para no recalcularlo (mismo resultado, menos cálculo).
+
+IA v98 · Fase 2b (remates por valor esperado y variedad): la CPU evaluaba cada remate con tres muestras fijas de azar,
+así que un remate del 55% podía valer como uno del 67% o del 33% según la suerte de esas semillas. Ahora pondera los
+resultados con gol y sin gol por la probabilidad de gol del motor, la misma que ve el jugador. Además, cuando varias
+jugadas valen casi lo mismo (menos de 4 puntos, menos del 1,5% del valor de un gol), elige entre ellas al azar en lugar
+de repetir siempre la misma; nunca elige una jugada claramente peor.

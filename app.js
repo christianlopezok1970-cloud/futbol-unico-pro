@@ -2332,6 +2332,90 @@ const V98_AI_PATCH = String.raw`
   return value;
  };
 
+ // ======== Etapa 2b ========
+ // ---- 2. Remates por valor esperado y 4. variedad controlada (decisión de la raíz) ----
+ // Cada jugada raíz se evalúa con las mismas tres muestras de azar que antes. Con tres muestras, un remate del
+ // 30% puede contar como 0% o como 67% de gol según la suerte fija de esas semillas; ahora el valor del remate
+ // pondera los resultados con gol y sin gol por la probabilidad de gol que calcula el motor (la misma que ve el
+ // jugador). Si en las muestras falta una de las dos clases, se evalúa esa consecuencia con la misma búsqueda.
+ function fuV98SearchCtx(){return {nodes:0,width:2,status:{textContent:''}};}
+ async function fuV98ShotOutcomeValue(rootState,shotKey,goal){
+  restoreSequenceState(rootState);forcedSearchPlanId=null;forcedSearchPlanTeam=null;simulationRandomState=CPU_SEARCH_SEEDS[0];
+  const a=tacticalCandidates().find(x=>sequenceActionKey(x)===shotKey);if(!a)return null;
+  const shooter=p.find(z=>z.id===a.playerId);
+  if(goal){
+   const goals=[0,0];simulateScoreGoal(CPU_TEAM,goals);
+   return (await searchSequenceNode(CPU_SEARCH_DEPTH-1,CPU_TEAM,goals,-Infinity,Infinity,fuV98SearchCtx())).value;
+  }
+  // Sin gol: el arquero rival queda con la pelota (atajada), la consecuencia más frecuente de un remate al arco.
+  const keeper=p.find(z=>z.t!==CPU_TEAM&&z.n===1);if(!keeper||!shooter)return null;
+  ball={c:keeper.c,r:keeper.r,owner:keeper.id};kickoffPassRequired=false;clearFreeKickRequirement(shooter.id);
+  if(restartPassOnlyId===shooter.id)restartPassOnlyId=null;
+  advanceSimulatedAction(false,shooter.id);
+  return (await searchSequenceNode(CPU_SEARCH_DEPTH-1,CPU_TEAM,[0,0],-Infinity,Infinity,fuV98SearchCtx())).value;
+ }
+ function fuV98PickRoot(scored){
+  scored.sort((a,b)=>b.mean-a.mean);
+  const best=scored[0];
+  if(!fuV98Ai.variety)return best.key;
+  const near=scored.filter(s=>s.mean>=best.mean-fuV98Ai.varietyMargin);
+  if(near.length<2)return best.key;
+  // Azar del propio partido en el momento de decidir: no anticipa ninguna tirada de las jugadas.
+  const weights=near.map(s=>Math.exp((s.mean-best.mean)/2)),total=weights.reduce((x,y)=>x+y,0);
+  let r=Math.random()*total;
+  for(let i=0;i<near.length;i++){r-=weights[i];if(r<=0)return near[i].key;}
+  return best.key;
+ }
+ let fuV98LastDecision=null;
+ const fuV98PrevChooseCpuMove=chooseCpuMove;
+ chooseCpuMove=async function(token){
+  if(!fuV98Ai.enabled)return fuV98PrevChooseCpuMove(token);
+  const rootState=captureSequenceState();
+  const rootKeys=cpuSearchCandidateKeys();
+  if(!rootKeys.length)return null;
+  const scored=[];
+  try{
+   for(let ki=0;ki<rootKeys.length;ki++){
+    let total=0,samples=0,shotP=null;const goalValues=[],otherValues=[];
+    for(let si=0;si<CPU_SEARCH_SEEDS.length;si++){
+     if(token!==cpuEpoch||!cpuAutoEnabled)return null;
+     restoreSequenceState(rootState);forcedSearchPlanId=null;forcedSearchPlanTeam=null;simulationRandomState=CPU_SEARCH_SEEDS[si];
+     const a=tacticalCandidates().find(x=>sequenceActionKey(x)===rootKeys[ki]);
+     if(!a)continue;
+     if(a.kind==='shoot'&&shotP===null)shotP=Math.max(0,Math.min(1,Number(a.goalProbability)||0));
+     const goals=[0,0],result=simulateOneAction(a,goals);let value;
+     if(result==='blocked')value=evaluateSequencePosition(CPU_TEAM,[0,0])-16;
+     else{
+      advanceSimulatedAction(result,a.playerId);
+      const child=await searchSequenceNode(CPU_SEARCH_DEPTH-1,CPU_TEAM,goals,-Infinity,Infinity,fuV98SearchCtx());
+      value=child.value;
+     }
+     total+=value;samples++;
+     if(a.kind==='shoot'&&result!=='blocked')(goals[CPU_TEAM-1]>0?goalValues:otherValues).push(value);
+     restoreSequenceState(rootState);
+    }
+    if(!samples)continue;
+    let mean=total/samples;const sampledMean=mean;let shotDetail=null;
+    if(fuV98Ai.shots&&shotP!==null&&goalValues.length+otherValues.length===samples){
+     const avg=v=>v.reduce((x,y)=>x+y,0)/v.length;
+     const vGoal=goalValues.length?avg(goalValues):await fuV98ShotOutcomeValue(rootState,rootKeys[ki],true);
+     const vOther=otherValues.length?avg(otherValues):await fuV98ShotOutcomeValue(rootState,rootKeys[ki],false);
+     restoreSequenceState(rootState);
+     if(vGoal!==null&&vOther!==null){mean=shotP*vGoal+(1-shotP)*vOther;shotDetail={p:shotP,vGoal,vOther,goalSamples:goalValues.length,otherSamples:otherValues.length};}
+    }
+    scored.push({key:rootKeys[ki],mean,sampledMean,shot:shotDetail});
+    if(token!==cpuEpoch||!cpuAutoEnabled)return null;
+   }
+  }finally{
+   restoreSequenceState(rootState);forcedSearchPlanId=null;forcedSearchPlanTeam=null;simulationRandomState=rootState.simulationRandomState;
+   activeTacticalPlan=chooseTacticalPlan(turn,owner());
+  }
+  if(!scored.length)return null;
+  const pick=fuV98PickRoot(scored);
+  // Diagnóstico interno de la última decisión (no cambia la elección).
+  fuV98LastDecision={at:matchClockActions,scored:scored.map(x=>({...x})),pick};
+  return tacticalCandidates().find(a=>sequenceActionKey(a)===pick)||null;
+ };
  // ================== FIN FÚTBOL ÚNICO v98 · IA (FASE 2) ==================
 `;
 
