@@ -1779,7 +1779,7 @@ const V97_MATCH_PATCH = String.raw`
    sub=matchClockFinished?'Revisá el resultado o empezá otro':turn===HUMAN_TEAM||!cpuAutoEnabled?'Tocá un jugador de tu equipo':'Mirá la jugada de la CPU';
    key='none';
   }
-  ui.chipName.textContent=name;ui.chipSub.textContent=sub;
+  ui.chipName.textContent=name;setChipSub(sub);
   if(key!==chipKey){chipKey=key;ui.chipToken.innerHTML=x&&!matchClockFinished?miniTokenSvg(x,'fu97ChipClip'):'<svg viewBox="-36 -36 72 72" aria-hidden="true"><circle r="30" fill="none" stroke="currentColor" stroke-width="3" stroke-dasharray="7 6"/><circle r="5" fill="currentColor"/></svg>';}
   boardEl.classList.toggle('fu97-mode-ball',mode==='ball'&&!!x&&!!o&&o.id===x.id);
   boardEl.classList.toggle('fu97-cpu-turn',cpuTurn);
@@ -1787,6 +1787,7 @@ const V97_MATCH_PATCH = String.raw`
   boardEl.classList.toggle('fu97-finished',!!matchClockFinished);
   const clockState=$('matchClockState');
   if(clockState){const c=$('matchClock');if(c){c.classList.toggle('fu97-clock-break',!!halftimePaused);c.classList.toggle('fu97-clock-final',!!matchClockFinished);}}
+  if(chipSubDirty){chipSubDirty=false;fitChipSub();requestAnimationFrame(fitChipSub);}
  }
 
  // ---------------------------------------------------------------- orientación y tamaño
@@ -1819,10 +1820,24 @@ const V97_MATCH_PATCH = String.raw`
   else requestAnimationFrame(()=>requestAnimationFrame(()=>{if(stateIsLive())followBallOnMobile();}));
   sizeBoard();
  }
+ // Chip de la barra de acción: texto completo si entra en una línea; si no, una versión corta (nunca cortado con «…»).
+ const CHIP_SUB_SHORT={'Con balón · mover o PASE/TIRO':'Mové, pasá o tirá','Elegí destino: pase o remate':'Elegí pase o remate','Elegí una casilla para moverlo':'Elegí una casilla','Tocá un jugador de tu equipo':'Tocá una ficha tuya','Revisá el resultado o empezá otro':'Revisá el resultado','Mirá la jugada de la CPU':'Juega la CPU'};
+ let chipSubFull=null,chipSubDirty=false;
+ // Sólo registra el texto: se mide al final de syncHud, cuando ya cambiaron las clases que alteran el ancho del botón.
+ function setChipSub(text){if(text===chipSubFull)return;chipSubFull=text;chipSubDirty=true;}
+ function fitChipSub(){
+  const s=ui.chipSub;if(!s||chipSubFull===null)return;
+  s.textContent=chipSubFull;s.removeAttribute('title');
+  const short=CHIP_SUB_SHORT[chipSubFull];
+  const have=short?s.getBoundingClientRect().width:0;if(!have)return;
+  // Ancho real con decimales: scrollWidth/clientWidth redondean y el navegador corta con «…» aunque sobre medio píxel.
+  const range=document.createRange();range.selectNodeContents(s);
+  if(range.getBoundingClientRect().width>have+0.02){s.textContent=short;s.title=chipSubFull;}
+ }
  function sizeBoard(){
   const fs=isFullscreen();
   if(ui.fsBtn)ui.fsBtn.innerHTML='<span class="fs-icon" aria-hidden="true">'+(fs?ICONS.collapse:ICONS.expand)+'</span>';
-  if(fs){boardEl.style.removeProperty('--fu97-board-w');requestAnimationFrame(()=>{const cw=scrollEl.clientWidth;if(cw)scrollEl.style.setProperty('--fu97-cw',cw+'px');});return;}
+  if(fs){boardEl.style.removeProperty('--fu97-board-w');requestAnimationFrame(()=>{const cw=scrollEl.clientWidth;if(cw)scrollEl.style.setProperty('--fu97-cw',cw+'px');fitChipSub();});return;}
   const col=boardEl.parentElement;if(!col)return;
   const colW=col.clientWidth;if(!colW)return;
   const head=appEl.querySelector('.head');
@@ -1841,6 +1856,7 @@ const V97_MATCH_PATCH = String.raw`
   w=Math.max(Math.min(colW,320),Math.min(colW,w));
   boardEl.style.setProperty('--fu97-board-w',w+'px');
   const cw=scrollEl.clientWidth;if(cw)scrollEl.style.setProperty('--fu97-cw',cw+'px');
+  fitChipSub();
  }
  let sizeRaf=0;
  function scheduleSize(){cancelAnimationFrame(sizeRaf);sizeRaf=requestAnimationFrame(()=>{applyOrientation();});}
