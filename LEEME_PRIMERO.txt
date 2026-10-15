@@ -70,3 +70,10 @@ puntuadas por la heurística general, y en uno de cada cuatro turnos rivales su 
 más peligrosa (remate, pase para remate o conducción para remate) siempre se considera, sin agregar nodos. Las mejoras
 de la fase 2 se controlan con el objeto fuV98Ai de app.js; con enabled=false la CPU decide como antes. Prueba:
 pruebas/regresion-ia-cpu.html, que además compara la huella de 29 funciones de reglas con la de 901c62b.
+
+IA v98 · Fase 2d (valor esperado en pases y disputas): las tres semillas con las que la CPU prueba cada jugada empiezan
+siempre con las mismas tiradas (0,599 · 0,112 · 0,021), y la primera tirada decide la precisión de un pase o la falta
+de una disputa. Por eso un pase del 85% nunca se veía impreciso y una disputa de costado (30% de falta) se veía como
+falta dos de cada tres veces. Ahora el valor pondera "pase completado al receptor" con precisión × (1 − intercepción) y
+"falta" con la probabilidad del reglamento (30% costado, 60% atrás); si falta una clase en las muestras, se evalúa con
+una semilla cuya primera tirada cae en esa clase.

@@ -2282,7 +2282,7 @@ const V98_SIM_COHERENCE = String.raw`
 const V98_AI_PATCH = String.raw`
  // ==================== FÚTBOL ÚNICO v98 · IA (FASE 2) ====================
  // Cada mejora tiene su interruptor para poder medirla por separado; con enabled=false la CPU decide como antes.
- const fuV98Ai={enabled:true,risk:true,shots:true,anticipation:true,variety:true,varietyMargin:4};
+ const fuV98Ai={enabled:true,risk:true,shots:true,expected:true,anticipation:true,variety:true,varietyMargin:4};
  // ---- Memoria de cálculos del mismo estado (no cambia resultados: mismas funciones, mismas posiciones) ----
  function fuV98StateKey(){let k=ball.c+','+ball.r+','+ball.owner+'|';for(const z of p)k+=z.c+','+z.r+';';return k;}
  let fuV98ThreatKey=null,fuV98ThreatValue=null,fuV98AttackKey=null,fuV98AttackValue=null;
@@ -2366,6 +2366,52 @@ const V98_AI_PATCH = String.raw`
   for(let i=0;i<near.length;i++){r-=weights[i];if(r<=0)return near[i].key;}
   return best.key;
  }
+ // ======== Etapa 2d ========
+ // ---- Valor esperado también en pases y disputas ----
+ // Las tres semillas de la raíz empiezan siempre con las mismas tiradas (0,599 · 0,112 · 0,021), y la primera tirada
+ // de una jugada decide su precisión o su falta. Por eso un pase del 85% nunca se veía impreciso y una disputa de
+ // costado (30% de falta) se veía como falta dos de cada tres veces. Ahora el valor pondera "pase completado al
+ // receptor" con precisión × (1 − intercepción) y "falta" con la probabilidad del reglamento (30% costado, 60% atrás).
+ // Si en las muestras falta una clase, se evalúa con una semilla cuya primera tirada cae en esa clase.
+ function fuV98NextState(s){let x=s>>>0;x^=x<<13;x^=x>>>17;x^=x<<5;return x>>>0;}
+ function fuV98SeedWhere(test){
+  for(let k=1;k<5000;k++){
+   const seed=((0x5BD1E995^Math.imul(k,0x9E3779B1))>>>0)||1;
+   let s=seed;const u=[];for(let i=0;i<3;i++){s=fuV98NextState(s);u.push(s/4294967296);}
+   if(test(u))return seed;
+  }
+  return null;
+ }
+ function fuV98ClassModel(a){
+  if(a.kind==='pass'&&a.receiverId!=null){
+   const prec=Math.max(0,Math.min(1,Number(a.precision)||0)),risk=Math.max(0,Math.min(1,Number(a.interceptRisk)||0));
+   const pSuccess=prec*(1-risk),receiverId=a.receiverId;
+   if(!(pSuccess>0&&pSuccess<1))return null;
+   const imprecise=1-prec>=prec*risk;
+   return {type:'pase',p:pSuccess,isA:()=>ball.owner===receiverId,
+    seedA:()=>fuV98SeedWhere(u=>u[0]<prec&&(risk<=0||u[1]>=risk)),
+    seedB:()=>fuV98SeedWhere(u=>imprecise?u[0]>=prec:(u[0]<prec&&u[1]<risk))};
+  }
+  if(a.kind==='duel'){
+   const x=p.find(z=>z.id===a.playerId),r=p.find(z=>z.id===a.opponentId);
+   if(!x||!r)return null;
+   const dc=r.c-x.c,dr=r.r-x.r,diagonal=Math.abs(dc)===1&&Math.abs(dr)===1,tipo=diagonal?'costado':duelType(x,r);
+   const pFoul=tipo==='atras'?.60:tipo==='costado'?.30:0,fouledTeam=r.t;
+   if(pFoul<=0)return null;
+   return {type:'disputa',p:pFoul,isA:result=>result===true&&freeKickAwardedTeam===fouledTeam,
+    seedA:()=>fuV98SeedWhere(u=>u[0]<pFoul),seedB:()=>fuV98SeedWhere(u=>u[0]>=pFoul)};
+  }
+  return null;
+ }
+ async function fuV98ForcedValue(rootState,key,seed,model,wantA){
+  if(seed===null)return null;
+  restoreSequenceState(rootState);forcedSearchPlanId=null;forcedSearchPlanTeam=null;simulationRandomState=seed;
+  const a=tacticalCandidates().find(x=>sequenceActionKey(x)===key);if(!a)return null;
+  const goals=[0,0],result=simulateOneAction(a,goals);
+  if(result==='blocked'||model.isA(result)!==wantA)return null;
+  advanceSimulatedAction(result,a.playerId);
+  return (await searchSequenceNode(CPU_SEARCH_DEPTH-1,CPU_TEAM,goals,-Infinity,Infinity,fuV98SearchCtx())).value;
+ }
  let fuV98LastDecision=null;
  const fuV98PrevChooseCpuMove=chooseCpuMove;
  chooseCpuMove=async function(token){
@@ -2376,14 +2422,16 @@ const V98_AI_PATCH = String.raw`
   const scored=[];
   try{
    for(let ki=0;ki<rootKeys.length;ki++){
-    let total=0,samples=0,shotP=null;const goalValues=[],otherValues=[];
+    let total=0,samples=0,shotP=null,model=null,modelReady=false,blockedAny=false;const goalValues=[],otherValues=[],aValues=[],bValues=[];
     for(let si=0;si<CPU_SEARCH_SEEDS.length;si++){
      if(token!==cpuEpoch||!cpuAutoEnabled)return null;
      restoreSequenceState(rootState);forcedSearchPlanId=null;forcedSearchPlanTeam=null;simulationRandomState=CPU_SEARCH_SEEDS[si];
      const a=tacticalCandidates().find(x=>sequenceActionKey(x)===rootKeys[ki]);
      if(!a)continue;
      if(a.kind==='shoot'&&shotP===null)shotP=Math.max(0,Math.min(1,Number(a.goalProbability)||0));
+     if(!modelReady){model=fuV98Ai.expected?fuV98ClassModel(a):null;modelReady=true;}
      const goals=[0,0],result=simulateOneAction(a,goals);let value;
+     const inA=model&&result!=='blocked'?model.isA(result):null;
      if(result==='blocked')value=evaluateSequencePosition(CPU_TEAM,[0,0])-16;
      else{
       advanceSimulatedAction(result,a.playerId);
@@ -2392,6 +2440,7 @@ const V98_AI_PATCH = String.raw`
      }
      total+=value;samples++;
      if(a.kind==='shoot'&&result!=='blocked')(goals[CPU_TEAM-1]>0?goalValues:otherValues).push(value);
+     if(model){if(result==='blocked')blockedAny=true;else (inA?aValues:bValues).push(value);}
      restoreSequenceState(rootState);
     }
     if(!samples)continue;
@@ -2403,7 +2452,15 @@ const V98_AI_PATCH = String.raw`
      restoreSequenceState(rootState);
      if(vGoal!==null&&vOther!==null){mean=shotP*vGoal+(1-shotP)*vOther;shotDetail={p:shotP,vGoal,vOther,goalSamples:goalValues.length,otherSamples:otherValues.length};}
     }
-    scored.push({key:rootKeys[ki],mean,sampledMean,shot:shotDetail});
+    let expectedDetail=null;
+    if(model&&!blockedAny&&aValues.length+bValues.length===samples){
+     const avg=v=>v.reduce((x,y)=>x+y,0)/v.length;
+     const vA=aValues.length?avg(aValues):await fuV98ForcedValue(rootState,rootKeys[ki],model.seedA(),model,true);
+     const vB=bValues.length?avg(bValues):await fuV98ForcedValue(rootState,rootKeys[ki],model.seedB(),model,false);
+     restoreSequenceState(rootState);
+     if(vA!==null&&vB!==null){mean=model.p*vA+(1-model.p)*vB;expectedDetail={type:model.type,p:model.p,vA,vB,aSamples:aValues.length,bSamples:bValues.length};}
+    }
+    scored.push({key:rootKeys[ki],mean,sampledMean,shot:shotDetail,expected:expectedDetail});
     if(token!==cpuEpoch||!cpuAutoEnabled)return null;
    }
   }finally{
