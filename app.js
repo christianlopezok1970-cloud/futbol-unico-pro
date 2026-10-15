@@ -658,6 +658,14 @@ html.fu97 body.tournament-match #app .fu97-kits-body label.ctrl{display:none!imp
  .fu97 #app .fu97-kitchip{width:22px;height:22px}
  .fu97 #app .fu97-actionbar .ball-fab-label{display:none!important}
 }
+/* v97.1.2 · Celular vertical: en la vista completa (y en pantalla completa) no se muestra el relato inferior
+   y la barra de acción queda en una sola fila, sin hueco vacío. En escritorio el relato sigue visible. */
+@media (max-width:680px) and (orientation:portrait){
+ .fu97 #app.fu97-mobile-complete .fu97-card-story,.fu97 #app.fu97-mobile-complete .fu97-ab-msg{display:none!important}
+ .fu97 #app.fu97-mobile-complete .fu97-actionbar{grid-template-columns:minmax(0,1fr) auto!important;grid-template-areas:"player fab"!important}
+ .fu97 #app .board:fullscreen .fu97-ab-msg,.fu97 #app .board:-webkit-full-screen .fu97-ab-msg{display:none!important}
+ .fu97 #app .board:fullscreen .fu97-actionbar,.fu97 #app .board:-webkit-full-screen .fu97-actionbar{grid-template-columns:minmax(0,1fr) auto!important;grid-template-areas:"player fab"!important}
+}
 
 /* ---------------------------------------------------------------- celular horizontal (poca altura) */
 @media (orientation:landscape) and (max-height:560px){
@@ -1841,6 +1849,7 @@ const V97_MATCH_PATCH = String.raw`
   vertical=next;
   boardEl.classList.toggle('fu97-vertical',vertical);
   boardEl.classList.toggle('fu97-zoom',portrait&&zoomPref);
+  appEl.classList.toggle('fu97-mobile-complete',vertical);
   rootEl.classList.toggle('fu97-portrait',portrait);
   if(ui.viewBtn){
    ui.viewBtn.hidden=!portrait;
