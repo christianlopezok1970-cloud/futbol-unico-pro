@@ -277,6 +277,9 @@ html.fu97 body{
 .fu97 #field .fu97-rcv-pill.is-blocked rect,.fu97 #field .fu97-rcv-pill.is-offside rect{stroke:rgba(255,93,108,.8)}
 .fu97 #field .fu97-rcv-pill.is-blocked text,.fu97 #field .fu97-rcv-pill.is-offside text{fill:#ffc2c8}
 .fu97 #field .fu97-rcv-pill{opacity:.95}
+/* Decoraciones de pase y remate: sólo informan. Los clics tienen que llegar a la casilla o a la ficha de abajo,
+   que son las que el motor escucha (onCell / clickP). */
+.fu97 #field .fu97-zones,.fu97 #field .fu97-lanes,.fu97 #field .fu97-receivers,.fu97 #field .fu97-shots{pointer-events:none}
 .fu97 #field .fu97-shot{stroke-width:4;stroke-linecap:round;stroke-dasharray:1 12;opacity:.9}
 .fu97 #field .fu97-shot.is-none{stroke:#ff8a95;opacity:.5}
 .fu97 #field .fu97-shot.is-low{stroke:#ffb35c}
@@ -1292,14 +1295,14 @@ const V97_MATCH_PATCH = String.raw`
  }
  function hookPreview(){
   const mouse=e=>e.pointerType==='mouse'||e.pointerType==='pen';
-  cells.addEventListener('pointerover',e=>{if(!mouse(e))return;const q=e.target.closest&&e.target.closest('.cell');if(q)previewFor(+q.dataset.c,+q.dataset.r);});
-  playersG.addEventListener('pointerover',e=>{
+  fuListen(cells,'pointerover',e=>{if(!mouse(e))return;const q=e.target.closest&&e.target.closest('.cell');if(q)previewFor(+q.dataset.c,+q.dataset.r);});
+  fuListen(playersG,'pointerover',e=>{
    if(!mouse(e))return;
    const n=e.target.closest&&e.target.closest('.player');if(!n||!stateIsLive())return;
    const z=p.find(q=>q.id===+n.dataset.id);if(!z)return;
    if(mode==='ball'||(selected!==null&&z.id!==selected))previewFor(z.c,z.r);else clearPreview();
   });
-  fieldEl.addEventListener('pointerleave',clearPreview);
+  fuListen(fieldEl,'pointerleave',clearPreview);
  }
 
  // ---------------------------------------------------------------- animaciones
@@ -1591,7 +1594,7 @@ const V97_MATCH_PATCH = String.raw`
   setBallPose(0);
   pendingBallRedraw=false;
   state.textContent=o?'Balón: Jugador '+o.n+' · Equipo '+o.t:'Balón suelto · casilla '+(ball.c+1)+'×'+(ball.r+1);
-  if(!manual)requestAnimationFrame(followBallOnMobile);
+  if(!manual)requestAnimationFrame(t=>{if(!layerFailed)followBallOnMobile(t);});
  }
 
  // ---------------------------------------------------------------- reorganización de paneles
@@ -1742,14 +1745,14 @@ const V97_MATCH_PATCH = String.raw`
   if(!kitBody.children.length)kits.hidden=true;
   if(bottom){bottom.classList.add('fu97-foot');side.appendChild(bottom);}
   // Observadores: textos del motor -> marcador, insignias y barra de acción.
-  const watch=(node,fn,opts)=>{if(node)new MutationObserver(fn).observe(node,opts||{childList:true,characterData:true,subtree:true});};
+  const watch=(node,fn,opts)=>{if(node)fuObserve(new MutationObserver(fn),node,opts||{childList:true,characterData:true,subtree:true});};
   watch(turnLine,syncHud);
   watch($('matchClockState'),syncHud);
   watch(cpuEl,syncHud,{childList:true,characterData:true,subtree:true,attributes:true,attributeFilter:['class']});
   [s1El,s2El].forEach(n=>watch(n,()=>bump(n)));
   watch(msgEl,onMessage);
-  ['goalCelebrationOverlay','halftimeOverlay','finalMatchOverlay','foulNotice'].forEach(id=>{const n=$(id);if(n)new MutationObserver(()=>onOverlay(n)).observe(n,{attributes:true,attributeFilter:['hidden']});});
-  scrollEl.addEventListener('scroll',()=>{if(vertical&&scrollEl.scrollLeft)scrollEl.scrollLeft=0;},{passive:true});
+  ['goalCelebrationOverlay','halftimeOverlay','finalMatchOverlay','foulNotice'].forEach(id=>{const n=$(id);if(n)fuObserve(new MutationObserver(()=>onOverlay(n)),n,{attributes:true,attributeFilter:['hidden']});});
+  fuListen(scrollEl,'scroll',()=>{if(vertical&&scrollEl.scrollLeft)scrollEl.scrollLeft=0;},{passive:true});
  }
  function bump(n){if(!n)return;n.classList.remove('fu97-bump');void n.offsetWidth;n.classList.add('fu97-bump');setTimeout(()=>n.classList.remove('fu97-bump'),900);}
  // Mensajes de acción rechazada (el motor no consumió la acción) y avisos de eventos del partido.
@@ -1904,7 +1907,7 @@ const V97_MATCH_PATCH = String.raw`
   }
   if(changed){refreshUprights();if(stateIsLive()&&!anim)newDrawBall();else pendingBallRedraw=true;}
   if(vertical)scrollEl.scrollLeft=0;
-  else requestAnimationFrame(()=>requestAnimationFrame(()=>{if(stateIsLive())followBallOnMobile();}));
+  else requestAnimationFrame(()=>requestAnimationFrame(()=>{if(!layerFailed&&stateIsLive())followBallOnMobile();}));
   sizeBoard();
  }
  // Chip de la barra de acción: texto completo si entra en una línea; si no, una versión corta (nunca cortado con «…»).
@@ -1913,6 +1916,7 @@ const V97_MATCH_PATCH = String.raw`
  // Sólo registra el texto: se mide al final de syncHud, cuando ya cambiaron las clases que alteran el ancho del botón.
  function setChipSub(text){if(text===chipSubFull)return;chipSubFull=text;chipSubDirty=true;}
  function fitChipSub(){
+  if(layerFailed)return;
   const s=ui.chipSub;if(!s||chipSubFull===null)return;
   s.textContent=chipSubFull;s.removeAttribute('title');
   const short=CHIP_SUB_SHORT[chipSubFull];
@@ -1952,14 +1956,16 @@ const V97_MATCH_PATCH = String.raw`
  }
  // «Ver más» sólo cuando el relato no entra; se recalcula también al cambiar el tamaño.
  function fitMsgMore(){
+  if(layerFailed)return;
   const m=$('msg');if(!m||!ui.more||!ui.msgWrap||ui.msgWrap.classList.contains('is-open'))return;
   ui.more.hidden=!(m.scrollHeight>m.clientHeight+2);
  }
- function fitTexts(){fitTeamNames();fitTurnSub();fitChipSub();fitMsgMore();}
+ function fitTexts(){if(layerFailed)return;fitTeamNames();fitTurnSub();fitChipSub();fitMsgMore();}
  function sizeBoard(){
+  if(layerFailed)return;
   const fs=isFullscreen();
   if(ui.fsBtn)ui.fsBtn.innerHTML='<span class="fs-icon" aria-hidden="true">'+(fs?ICONS.collapse:ICONS.expand)+'</span>';
-  if(fs){boardEl.style.removeProperty('--fu97-board-w');requestAnimationFrame(()=>{const cw=scrollEl.clientWidth;if(cw)scrollEl.style.setProperty('--fu97-cw',cw+'px');fitTexts();});return;}
+  if(fs){boardEl.style.removeProperty('--fu97-board-w');requestAnimationFrame(()=>{if(layerFailed)return;const cw=scrollEl.clientWidth;if(cw)scrollEl.style.setProperty('--fu97-cw',cw+'px');fitTexts();});return;}
   const col=boardEl.parentElement;if(!col)return;
   const colW=col.clientWidth;if(!colW)return;
   const head=appEl.querySelector('.head');
@@ -1985,8 +1991,51 @@ const V97_MATCH_PATCH = String.raw`
   fitTexts();
  }
  let sizeRaf=0;
- function scheduleSize(){cancelAnimationFrame(sizeRaf);sizeRaf=requestAnimationFrame(()=>{applyOrientation();});}
+ function scheduleSize(){if(layerFailed)return;cancelAnimationFrame(sizeRaf);sizeRaf=requestAnimationFrame(()=>{if(!layerFailed)applyOrientation();});}
 
+ // ---------------------------------------------------------------- instalación transaccional
+ // La capa se instala como una transacción. Antes de tocar nada se toma una foto del documento (nodos, orden de
+ // los hijos, atributos y textos) y cada escucha, observador o temporizador que v97 pone sobre objetos que no crea
+ // queda anotado en fuUndo. Si un paso falla, se deshace todo, se reponen los renderizadores y el motor redibuja
+ // la vista v96: no quedan paneles movidos, SVG modificado ni escuchas colgando.
+ let layerFailed=false,fuSnap=null;
+ const fuUndo=[];
+ function fuListen(target,type,fn,opts){if(!target)return;target.addEventListener(type,fn,opts);fuUndo.push(()=>target.removeEventListener(type,fn,opts));}
+ function fuObserve(obs,node,opts){obs.observe(node,opts);fuUndo.push(()=>obs.disconnect());return obs;}
+ function fuTimeout(fn,ms){const id=setTimeout(fn,ms);fuUndo.push(()=>clearTimeout(id));}
+ function fuSnapshot(root){
+  const items=[],walker=document.createTreeWalker(root,NodeFilter.SHOW_ELEMENT|NodeFilter.SHOW_TEXT|NodeFilter.SHOW_COMMENT);
+  for(let n=root;n;n=walker.nextNode()){
+   if(n.nodeType===1)items.push({n,kids:Array.prototype.slice.call(n.childNodes),attrs:Array.prototype.map.call(n.attributes,a=>[a.namespaceURI,a.name,a.value])});
+   else items.push({n,data:n.data});
+  }
+  return items;
+ }
+ function fuRollback(items){
+  const changed=items.filter(it=>{
+   if(!it.kids)return false;
+   const cur=it.n.childNodes;
+   if(cur.length!==it.kids.length)return true;
+   for(let i=0;i<cur.length;i++)if(cur[i]!==it.kids[i])return true;
+   return false;
+  });
+  // 1) Se vacían los contenedores alterados: los nodos nuevos salen del documento y los movidos quedan sueltos.
+  changed.forEach(it=>{const n=it.n;while(n.lastChild)n.removeChild(n.lastChild);});
+  // 2) Cada contenedor recupera sus hijos originales, en el orden original: son los mismos nodos, con las escuchas del motor.
+  changed.forEach(it=>{it.kids.forEach(k=>{try{it.n.appendChild(k);}catch(e){console.error('[Fútbol Único v97] No se pudo reponer un nodo.',e);}});});
+  // 3) Atributos y textos originales (class, style, viewBox, transform, xlink:href, hidden, data-*...).
+  //    Si un elemento cambió en algo, se le reponen todos sus atributos en el orden original.
+  items.forEach(it=>{
+   const n=it.n;
+   if(!it.attrs){if(n.data!==it.data)n.data=it.data;return;}
+   const cur=n.attributes;
+   let same=cur.length===it.attrs.length;
+   for(let i=0;same&&i<cur.length;i++){const a=cur[i],o=it.attrs[i];same=a.namespaceURI===o[0]&&a.name===o[1]&&a.value===o[2];}
+   if(same)return;
+   while(n.attributes.length)n.removeAttributeNode(n.attributes[0]);
+   it.attrs.forEach(a=>{if(a[0])n.setAttributeNS(a[0],a[1],a[2]);else n.setAttribute(a[1],a[2]);});
+  });
+ }
  // ---------------------------------------------------------------- instalación
  const previous={animatePlayerMove,animateDuel,animateBall,drawPlayers,drawBall,rebuildBallTargets,refresh};
  function installRenderers(){
@@ -2013,6 +2062,7 @@ const V97_MATCH_PATCH = String.raw`
   drawPlayers=previous.drawPlayers;drawBall=previous.drawBall;rebuildBallTargets=previous.rebuildBallTargets;refresh=previous.refresh;
  }
  try{
+  fuSnap=fuSnapshot(document.documentElement);
   installDefs();
   buildPitch();
   buildLayers();
@@ -2028,13 +2078,13 @@ const V97_MATCH_PATCH = String.raw`
   // Las mediciones de texto dependen de la tipografía: se repiten cuando terminan de cargar las fuentes.
   if(document.fonts&&document.fonts.ready)document.fonts.ready.then(()=>{if(rootEl.classList.contains('fu97'))fitTexts();});
   const onViewport=()=>scheduleSize();
-  window.addEventListener('resize',onViewport,{passive:true});
-  window.addEventListener('orientationchange',onViewport,{passive:true});
-  if(portraitMQ.addEventListener)portraitMQ.addEventListener('change',onViewport);
-  document.addEventListener('fullscreenchange',()=>setTimeout(scheduleSize,60));
-  document.addEventListener('webkitfullscreenchange',()=>setTimeout(scheduleSize,60));
-  if(window.ResizeObserver){const ro=new ResizeObserver(()=>scheduleSize());ro.observe(appEl);if(ui.bar)ro.observe(ui.bar);}
-  setTimeout(scheduleSize,120);
+  fuListen(window,'resize',onViewport,{passive:true});
+  fuListen(window,'orientationchange',onViewport,{passive:true});
+  if(portraitMQ.addEventListener)fuListen(portraitMQ,'change',onViewport);
+  fuListen(document,'fullscreenchange',()=>setTimeout(scheduleSize,60));
+  fuListen(document,'webkitfullscreenchange',()=>setTimeout(scheduleSize,60));
+  if(window.ResizeObserver){const ro=fuObserve(new ResizeObserver(()=>scheduleSize()),appEl);if(ui.bar)ro.observe(ui.bar);}
+  fuTimeout(scheduleSize,120);
   window.FUTBOL_UNICO_V97={
    version:VERSION,
    layer:'visual',
@@ -2042,11 +2092,21 @@ const V97_MATCH_PATCH = String.raw`
    setMobileView:v=>setZoomPref(v==='ampliada'),
    redraw:()=>{if(stateIsLive()&&!anim){drawPlayers();drawBall();refresh();}}
   };
+  fuSnap=null;
  }catch(error){
-  console.error('[Fútbol Único v97] No se pudo instalar el rediseño visual; se conserva la vista anterior.',error);
+  console.error('[Fútbol Único v97] No se pudo instalar el rediseño visual; se restaura la vista v96.',error);
+  layerFailed=true;
+  // Orden: primero se cortan escuchas y observadores (para que la restauración no dispare código v97),
+  // después se reponen los renderizadores y el documento, y al final el motor redibuja con sus funciones.
+  for(let i=fuUndo.length-1;i>=0;i--){try{fuUndo[i]();}catch(e){}}
+  fuUndo.length=0;
+  cancelAnimationFrame(sizeRaf);
   restoreRenderers();
+  if(fuSnap){try{fuRollback(fuSnap);}catch(e){console.error('[Fútbol Único v97] Falló la restauración del documento.',e);}}
+  fuSnap=null;
   rootEl.classList.remove('fu97');
-  try{drawPlayers();drawBall();refresh();}catch(e){}
+  try{delete window.FUTBOL_UNICO_V97;}catch(e){}
+  try{drawPlayers();drawBall();refresh();}catch(e){console.error('[Fútbol Único v97] Error al redibujar la vista v96.',e);}
  }
 })();
 // ================== FIN FÚTBOL ÚNICO v97 ==================
