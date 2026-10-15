@@ -2556,7 +2556,7 @@ const V98_DEF_PATCH = String.raw`
  //  · Selección: defendiendo, la raíz admitía solo dos movimientos elegidos por la heurística general; el movimiento
  //    que más reducía el peligro muchas veces no llegaba a compararse.
  //  · Faltas: la rama "falta" de una disputa se valoraba con una única muestra del tiro libre posterior.
- const fuV98Def={enabled:true,boundary:true};
+ const fuV98Def={enabled:true,boundary:true,roots:true,rootExtra:3,rootMinGain:0.02};
  function fuV98DefOn(){return fuV98Def.enabled&&fuV98Ai.enabled;}
 
  // ---- Amenaza inmediata: valor esperado de la mejor secuencia de gol del equipo que empieza su turno con la pelota ----
@@ -2633,6 +2633,39 @@ const V98_DEF_PATCH = String.raw`
  }
  searchSequenceNode=fuV98DefSearchSequenceNode;
 
+ // ======== Etapa 3b · selección: en defensa la raíz incluye los movimientos que más reducen la amenaza ========
+ // Se conservan las mismas candidatas de antes (heurística general) y se agregan hasta tres movimientos legales de
+ // jugadores distintos que bajan la amenaza inmediata del rival al menos 2 puntos: presionar el primer casillero de una
+ // trayectoria, ocupar una línea de pase o de remate, o retroceder entre la pelota y el arco. La búsqueda decide.
+ const fuV98DefPrevRootKeys=cpuSearchCandidateKeys;
+ let fuV98DefLastRoots=null;
+ cpuSearchCandidateKeys=function(){
+  const holder=owner();
+  if(!fuV98DefOn()||!fuV98Def.roots||turn!==CPU_TEAM||!holder||holder.t===CPU_TEAM)return fuV98DefPrevRootKeys();
+  // Misma lista base que cpuSearchCandidateKeys(), calculada una sola vez.
+  const all=tacticalCandidates();
+  let roots=chooseSearchActions(all.filter(a=>!cpuRejectedKeys.has(sequenceActionKey(a))),6);
+  if(!roots.length&&cpuRejectedKeys.size){cpuRejectedKeys.clear();roots=chooseSearchActions(tacticalCandidates(),5);}
+  const keys=roots.map(sequenceActionKey);
+  const now=fuV98DefThreat(holder.t).p,added=[];
+  if(now>=0.03){
+   const have=new Set(keys),scored=[];
+   for(const a of all){
+    if(a.kind!=='move'||!a.to)continue;
+    const key=sequenceActionKey(a);
+    if(have.has(key)||cpuRejectedKeys.has(key))continue;
+    const x=p.find(z=>z.id===a.playerId);if(!x)continue;
+    const oc=x.c,or=x.r;x.c=a.to.c;x.r=a.to.r;
+    let t;try{t=fuV98DefThreat(holder.t).p;}finally{x.c=oc;x.r=or;}
+    if(t<=now-fuV98Def.rootMinGain)scored.push({key,t,score:Number(a.score)||0,playerId:a.playerId});
+   }
+   scored.sort((u,v)=>u.t-v.t||v.score-u.score||(u.key<v.key?-1:u.key>v.key?1:0));
+   const used=new Set();
+   for(const s of scored){if(added.length>=fuV98Def.rootExtra)break;if(used.has(s.playerId))continue;used.add(s.playerId);added.push(s.key);}
+  }
+  fuV98DefLastRoots={threat:now,base:keys.slice(),added:added.slice()};
+  return keys.concat(added);
+ };
  // ================== FIN FÚTBOL ÚNICO v98 · DEFENSA (FASE 3) ==================
 `;
 
