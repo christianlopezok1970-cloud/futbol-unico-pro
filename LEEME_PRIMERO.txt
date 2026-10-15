@@ -30,3 +30,16 @@ fotografiados, con su filtro de color original); se quitaron la textura generada
 vectoriales. Los indicadores tácticos aparecen solo al seleccionar un jugador o preparar una acción, con un solo
 número por destino (remates: casillas habilitadas y probabilidad de gol); el detalle completo se ve al apuntar un
 destino. El HUD no usa degradés ni brillos y la guía «Cómo leer la cancha» queda plegada. El motor no cambia.
+
+Corrección v98 del motor (pase fallido que no sale de la casilla del pasador): con la precisión de v96, un pase
+que queda corto tantas casillas como su distancia terminaba en la casilla del propio pasador, que no puede recibir
+su pase fallido. La pelota quedaba suelta debajo del pasador, en una casilla ocupada: nadie podía entrar a
+recogerla ni disputarla, el rival no tenía forma de recuperarla y solo el equipo que falló la destrababa moviendo
+al pasador. Ahora, solo en ese caso, la pelota queda suelta en la casilla libre más cercana al pasador en el
+sentido del pase (nunca en el destino elegido ni en una casilla de gol) y cualquiera de los dos equipos puede
+recogerla con las reglas de siempre. La corrección es una capa separada de app.js (V98_ENGINE_FIXES y
+patchShortPassLooseBall) que se aplica igual al partido real y a la simulación con la que la CPU anticipa
+jugadas; no usa azar adicional ni cambia reglas, probabilidades, IA, cronómetro ni la carpeta baseline.
+Prueba de regresión: pruebas/regresion-pase-corto.html, abierta desde el mismo servidor que el juego (no como
+archivo local). Ejecuta el motor real con 34 comprobaciones para el equipo humano y la CPU en situaciones
+espejadas, con el almacenamiento aislado en memoria. La carpeta pruebas no es necesaria para publicar el juego.

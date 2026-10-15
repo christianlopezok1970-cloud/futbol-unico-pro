@@ -2065,6 +2065,47 @@ const V97_MATCH_PATCH = String.raw`
 // ================== FIN FÚTBOL ÚNICO v97 ==================
 `;
 
+// v98 · Correcciones del motor. Capa separada de v96 (táctica) y de v97 (visual): sólo corrige estados
+// imposibles del balón. No cambia reglas, probabilidades, resolución de acciones, IA ni cronómetro.
+const V98_ENGINE_FIXES = String.raw`
+ // ==================== FÚTBOL ÚNICO v98 · CORRECCIONES DEL MOTOR ====================
+ // Pase fallido que no sale de la casilla del pasador.
+ // En v96, un pase que queda corto tantas casillas como su distancia termina en la casilla de origen,
+ // y el pasador no puede recibir su propio pase fallido. Sin esta corrección la pelota quedaba suelta
+ // (owner=null) debajo del pasador: en una casilla ocupada a la que nadie puede entrar, de modo que el
+ // rival no podía recogerla ni disputarla y sólo el equipo que falló podía destrabarla moviendo al pasador.
+ // Una pelota suelta tiene que estar en una casilla libre para que rija la regla de recuperación
+ // ("la ficha que entra en la casilla de una pelota suelta la recoge"), igual que tras un desvío o una disputa.
+ // La pelota queda suelta en la casilla libre más cercana al pasador, en el sentido del pase, sin usar el
+ // destino elegido ni casillas de gol. Es determinista: no consume azar, así que la precisión, los desvíos y
+ // las intercepciones conservan exactamente sus probabilidades.
+ function fuV98ShortPassRestCell(passer,from,intended){
+  if(!passer||!from)return null;
+  const target=intended&&Number.isFinite(intended.c)&&Number.isFinite(intended.r)?intended:null;
+  const forward=attackDir(passer.t);
+  const vx=target?target.c-from.c:forward,vy=target?target.r-from.r:0,vn=Math.hypot(vx,vy)||1;
+  for(let radius=1;radius<Math.max(C,R);radius++){
+   let best=null,bestKey=null;
+   for(let r=from.r-radius;r<=from.r+radius;r++)for(let c=from.c-radius;c<=from.c+radius;c++){
+    if(Math.max(Math.abs(c-from.c),Math.abs(r-from.r))!==radius)continue;
+    if(c<0||c>=C||r<0||r>=R||at(c,r))continue;
+    if(isGoalCell(c,r,'L')||isGoalCell(c,r,'R'))continue;
+    if(target&&c===target.c&&r===target.r)continue;
+    const dx=c-from.c,dy=r-from.r;
+    // Orden: más alineada con el pase; más cerca de la fila central; fila; hacia el arco rival.
+    // Es simétrico entre equipos: la misma jugada espejada deja la pelota en la casilla espejada.
+    const key=[-Math.round((dx*vx+dy*vy)/(Math.hypot(dx,dy)*vn)*1e6),Math.abs(2*r-(R-1)),r,-dx*forward];
+    let better=!best;
+    for(let i=0;!better&&i<key.length;i++){if(key[i]!==bestKey[i]){better=key[i]<bestKey[i];break;}}
+    if(better){best={c,r};bestKey=key;}
+   }
+   if(best)return best;
+  }
+  return null;
+ }
+ // ================== FIN FÚTBOL ÚNICO v98 · CORRECCIONES DEL MOTOR ==================
+`;
+
 (() => {
   "use strict";
   const BASELINE_COMMIT = "d62eae16f15984cdb4397b93d8c4a34e89392efd";
@@ -2357,6 +2398,41 @@ const V97_MATCH_PATCH = String.raw`
     return html;
   }
 
+  // v98 · Coherencia del balón cuando un pase fallido no sale de la casilla del pasador.
+  // Corrección del motor: no cambia reglas, probabilidades, resolución de acciones, IA ni cronómetro.
+  // Cada reemplazo comprueba que exista fuV98ShortPassRestCell, así que nunca deja una referencia rota.
+  function patchShortPassLooseBall(html, report) {
+    html = replaceOnce(
+      html,
+      "  const receiver=at(c,r,x.id);\n  kickoffPassRequired=false;\n  clearFreeKickRequirement(x.id);\n",
+      "  const receiver=at(c,r,x.id);\n" +
+      "  // v98: si el pase fallido no salió de la casilla del pasador, la pelota queda suelta en una casilla libre a su lado.\n" +
+      "  const fuV98ShortRest=!receiver&&(at(c,r)||{}).id===x.id&&typeof fuV98ShortPassRestCell==='function'?fuV98ShortPassRestCell(x,from,typeof intendedTarget!=='undefined'?intendedTarget:null):null;\n" +
+      "  if(fuV98ShortRest){c=fuV98ShortRest.c;r=fuV98ShortRest.r;}\n" +
+      "  kickoffPassRequired=false;\n  clearFreeKickRequirement(x.id);\n",
+      "v98: el pase fallido que no sale del pasador deja la pelota suelta en una casilla libre",
+      report,
+    );
+    html = replaceOnce(
+      html,
+      "  text=accuracy.description+' '+text;\n  if(bypassedInterceptor)",
+      "  if(typeof fuV98ShortRest!=='undefined'&&fuV98ShortRest)text='La pelota queda suelta junto al Jugador '+x.n+', en la casilla '+(c+1)+'×'+(r+1)+'.';\n" +
+      "  text=accuracy.description+' '+text;\n  if(bypassedInterceptor)",
+      "v98: mensaje del pase fallido que queda suelto junto al pasador",
+      report,
+    );
+    html = replaceOnce(
+      html,
+      "   ball={c:target.c,r:target.r,owner:receiver?receiver.id:null};\n",
+      "   // v98: la simulación con la que la CPU anticipa jugadas deja la pelota en la misma casilla libre.\n" +
+      "   const fuV98SimRest=!receiver&&(at(target.c,target.r)||{}).id===a.playerId&&typeof fuV98ShortPassRestCell==='function'?fuV98ShortPassRestCell(a.player,from,a.to):null;\n" +
+      "   ball=fuV98SimRest?{c:fuV98SimRest.c,r:fuV98SimRest.r,owner:null}:{c:target.c,r:target.r,owner:receiver?receiver.id:null};\n",
+      "v98: la simulación de la CPU usa la misma pelota suelta en casilla libre",
+      report,
+    );
+    return html;
+  }
+
   function patchTournamentCpuProfiles(html, report) {
     html = replaceOnce(
       html,
@@ -2472,11 +2548,17 @@ function ensureCpuProfiles(){if(!state)return;const seed=(state.selectedClubId||
     let visualPatch = "";
     try { new Function(V97_MATCH_PATCH); visualPatch = V97_MATCH_PATCH; report.patches.push("sintaxis JavaScript v97 (rediseño visual) verificada"); }
     catch (error) { report.warnings.push(`La capa visual v97 no superó el control de sintaxis y no se instaló: ${String(error)}`); }
+    // v98 corrige estados imposibles del balón. Si no superara su control de sintaxis, sus parches de texto
+    // quedan inactivos (comprueban que la función exista) y el partido sigue con el motor v96.
+    let engineFixes = "";
+    try { new Function(V98_ENGINE_FIXES); engineFixes = V98_ENGINE_FIXES; report.patches.push("sintaxis JavaScript v98 (correcciones del motor) verificada"); }
+    catch (error) { report.warnings.push(`La capa v98 de correcciones del motor no superó el control de sintaxis y no se instaló: ${String(error)}`); }
     const finalIife = html.lastIndexOf("})();");
     if (finalIife < 0) { report.warnings.push("No se encontró el cierre del motor para instalar v96."); return html; }
     report.patches.push("motor táctico v96");
+    if (engineFixes) report.patches.push("correcciones del motor v98");
     if (visualPatch) { report.visualLayer = true; report.patches.push("rediseño visual del partido v97"); }
-    return `${html.slice(0, finalIife)}\n${V96_ENGINE_PATCH}\n${visualPatch}\n${html.slice(finalIife)}`;
+    return `${html.slice(0, finalIife)}\n${V96_ENGINE_PATCH}\n${engineFixes}\n${visualPatch}\n${html.slice(finalIife)}`;
   }
   async function loadGamePage(requestedPage) {
     const sourcePath = PAGE_PATHS[requestedPage];
@@ -2492,7 +2574,7 @@ function ensureCpuProfiles(){if(!state)return;const seed=(state.selectedClubId||
     if (requestedPage === "tournament") html = patchTournamentCpuProfiles(html, report);
     html = patchInternalNavigation(html, report);
     html = patchEmbeddedLocation(html, report);
-    if (enginePage) { html = patchSimulationParity(html, report); html = patchProgressiveActionResolution(html, report); html = injectEnginePatch(html, report); }
+    if (enginePage) { html = patchSimulationParity(html, report); html = patchProgressiveActionResolution(html, report); html = patchShortPassLooseBall(html, report); html = injectEnginePatch(html, report); }
     const baseHref = new URL(`baseline/${PAGE_BASES[requestedPage]}`, BASE).href;
     html = injectBeforeClosingTag(html, "</head>", `<base href="${baseHref}"><style id="fu-v96-visual-layer">${enginePage ? V96_GAME_STYLES : V96_SHELL_STYLES}</style>`);
     // Estilos del rediseño v97: sólo en la pantalla de partido y sólo si su capa JS quedó instalada.
