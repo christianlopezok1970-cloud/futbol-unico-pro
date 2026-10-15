@@ -24,3 +24,9 @@ vertical la cancha se muestra completa y girada (con opción «Ampliar» para la
 No modifica la carpeta baseline ni las reglas, probabilidades, resolución de acciones, cronómetro o IA:
 los porcentajes que se muestran salen de las mismas funciones de estimación del motor.
 Si la capa visual no superara su control de sintaxis, el partido se carga con la vista v96.
+
+Refinamiento v97.1: la cancha vuelve a ser la foto original del motor (césped, líneas, áreas y arcos
+fotografiados, con su filtro de color original); se quitaron la textura generada y las líneas, arcos y banderines
+vectoriales. Los indicadores tácticos aparecen solo al seleccionar un jugador o preparar una acción, con un solo
+número por destino (remates: casillas habilitadas y probabilidad de gol); el detalle completo se ve al apuntar un
+destino. El HUD no usa degradés ni brillos y la guía «Cómo leer la cancha» queda plegada. El motor no cambia.

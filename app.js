@@ -173,19 +173,11 @@ html.fu97 body{
 /* ---------------------------------------------------------------- SVG: césped, líneas y arcos */
 /* La textura v97 ya trae su color final: el filtro CSS de la foto anterior se desactiva
    (combinado con una imagen grande obliga a re-rasterizar toda la cancha en cada cuadro). */
-.fu97 #field #pitchTexture{filter:none!important}
 /* Fondo estático (textura, líneas y arcos) en su propia capa: se rasteriza una vez y no se
    vuelve a pintar cuando se mueven fichas, balón o guías. */
 .fu97 #field #pitchTexture,.fu97 #field #grass{will-change:transform}
 /* Fichas y balón en capas propias: moverlos no obliga a repintar césped, casillas ni paneles. */
 .fu97 #field #players,.fu97 #field #ball{will-change:transform}
-.fu97 #field .fu97-lines{fill:none;stroke:#f4faf1;stroke-opacity:.86;stroke-width:5;stroke-linecap:round;stroke-linejoin:round}
-.fu97 #field .fu97-spots circle{fill:#f4faf1;fill-opacity:.9}
-.fu97 #field .fu97-goal-shadow{fill:#000;fill-opacity:.26}
-.fu97 #field .fu97-goal-net{fill:url(#fu97Net);stroke:none}
-.fu97 #field .fu97-goal-frame{fill:none;stroke:#e9f0ea;stroke-opacity:.6;stroke-width:3;stroke-linecap:round}
-.fu97 #field .fu97-goal-bar{stroke:#ffffff;stroke-width:9;stroke-linecap:round}
-.fu97 #field .fu97-goal-post{fill:#ffffff;stroke:rgba(0,0,0,.35);stroke-width:1.5}
 .fu97 #field #gL,.fu97 #field #gR{fill:transparent!important;stroke:none!important;cursor:default}
 .fu97 #field #gL.active,.fu97 #field #gR.active{cursor:pointer}
 .fu97 #field #gL.fu97-target,.fu97 #field #gR.fu97-target{fill:rgba(255,210,90,.15)!important;stroke:#ffe08a!important;stroke-width:3.5!important;stroke-dasharray:12 8}
@@ -529,9 +521,6 @@ html.fu97 body.tournament-match #app .fu97-kits-body label.ctrl{display:none!imp
 .fu97 #field .fu97-tk-hit{fill:transparent;stroke:none}
 .fu97 #field .fu97-tk-edge,.fu97 #field .fu97-tk-edge-dk{pointer-events:none}
 .fu97 #field .fu97-tk-edge-dk{fill:#000;fill-opacity:.42}
-.fu97 #field .fu97-flag-pole{stroke:#f2f5f0;stroke-width:2.6;stroke-linecap:round}
-.fu97 #field .fu97-flag-cloth{fill:#ffd23d;stroke:#a26d00;stroke-width:1;stroke-linejoin:round}
-.fu97 #field .fu97-flag-base{fill:#f2f5f0;stroke:rgba(0,0,0,.35);stroke-width:1}
 .fu97 #app .fu97-sb-result{position:relative}
 .fu97 #app .fu97-sb-result::after{content:"";position:absolute;bottom:0;left:0;width:50%;height:3px;background:var(--k-lime);box-shadow:0 0 8px rgba(200,255,46,.55);opacity:0;transition:left .3s ease,opacity .2s ease;pointer-events:none}
 .fu97 #app .fu97-sb-result[data-poss="1"]::after{left:0;opacity:1}
@@ -556,6 +545,41 @@ html.fu97 body.tournament-match #app .fu97-kits-body label.ctrl{display:none!imp
  .fu97 #app .fu97-banner{transform:translate(-50%,0);transition:opacity .2s ease,visibility 0s linear .2s}
  .fu97 #app .fu97-sb-result::after{transition:none}
 }
+/* ---------------------------------------------------------------- v97.1 · refinamiento: cancha original, indicadores discretos, HUD limpio */
+/* Márgenes del SVG que la foto no cubre: tono oscuro de estadio, como en v96. */
+.fu97 #app .fu97-pitchframe{background:#0e1a13}
+/* Grilla de casillas apenas visible sobre la foto; movimiento: solo el punto; la selección la marca el anillo de la ficha. */
+.fu97 #field .cell{stroke:rgba(255,255,255,.06)!important}
+.fu97 #field .cell.pl{stroke:none!important}
+.fu97 #field .cell.pl.duel{stroke:rgba(255,154,60,.7)!important;stroke-width:2!important}
+.fu97 #field .cell.sel{fill:transparent!important;stroke:none!important}
+/* Precisión por distancia: tinte suave, sin bordes punteados. */
+.fu97 #field .fu97-zone.is-p5{fill-opacity:.07}
+.fu97 #field .fu97-zone.is-p4{fill-opacity:.055}
+.fu97 #field .fu97-zone.is-p3{fill-opacity:.045}
+.fu97 #field .fu97-zone.is-p2,.fu97 #field .fu97-zone.is-p1{fill-opacity:.04}
+.fu97 #field .fu97-rcv circle{stroke-width:3.5}
+.fu97 #field .fu97-rcv-pill{opacity:.92}
+/* Huellas de la CPU más finas (además se desvanecen solas). */
+.fu97 #field .fu97-ghost{stroke-width:3;stroke-opacity:.45}
+.fu97 #field .fu97-ghost.is-persist{stroke-opacity:.5}
+/* HUD: sin degradés de color ni brillos de neón. */
+.fu97 #app .fu97-home,.fu97 #app .fu97-away{background:none}
+.fu97 #app .match-clock{border-color:var(--k-line)!important;box-shadow:none!important}
+.fu97 #app .match-clock-time{color:#f4f7fb!important;text-shadow:none!important}
+.fu97 #app .match-clock-state{border-color:var(--k-line)!important;background:transparent!important;color:var(--k-muted)!important}
+.fu97 #app .fu97-turnbox .fu97-turn-badge{box-shadow:none}
+.fu97 #app .fu97-pips i.is-now{box-shadow:none}
+.fu97 #app .fu97-sb-result::after{box-shadow:none}
+.fu97 #app .fu97-actionbar #ballModeControl:not(:disabled):not(.active){box-shadow:0 6px 16px rgba(0,0,0,.3)!important}
+.fu97 #app .fu97-actionbar #ballModeControl.active{box-shadow:none!important}
+/* Guía de lectura plegable: queda cerrada y se abre desde su título. */
+.fu97 #app .fu97-card-legend .fu97-card-title{cursor:pointer;margin-bottom:0;user-select:none}
+.fu97 #app .fu97-card-legend .fu97-card-title::after{content:"";width:7px;height:7px;margin:0 3px 3px auto;border-right:2px solid currentColor;border-bottom:2px solid currentColor;transform:rotate(45deg);transition:transform .2s ease}
+.fu97 #app .fu97-card-legend.is-collapsed .fu97-card-title::after{transform:rotate(-45deg);margin-bottom:0}
+.fu97 #app .fu97-card-legend:not(.is-collapsed) .fu97-card-title{margin-bottom:10px}
+.fu97 #app .fu97-card-legend.is-collapsed .fu97-legend{display:none}
+.fu97 #app .fu97-card-legend .fu97-card-title:focus-visible{outline:2px solid var(--k-lime);outline-offset:3px;border-radius:4px}
 @media (max-width:1599.98px){
  .fu97 #app .fu97-nav-label{display:none}
  .fu97 #app .fu97-nav a{padding:0 15px!important}
@@ -717,7 +741,9 @@ const V97_MATCH_PATCH = String.raw`
  const ACTIONS=typeof ACTIONS_PER_TURN==='number'?ACTIONS_PER_TURN:3;
  // El motor explora variantes de forma asíncrona modificando temporalmente p/ball/turn.
  const stateIsLive=()=>!cpuSearching&&simulationRandomState===null&&!brainTrainingRunning&&!sequenceSearchRunning;
- const VB={x:-95,y:-30,w:1990,h:1160};
+ // La foto original cubre y=-31…1094,5. El viewBox conserva su tamaño (mismo diseño de pantalla) y se corre
+ // para que los márgenes sin foto queden chicos y parejos arriba y abajo.
+ const VB={x:-95,y:-45,w:1990,h:1160};
  let vertical=false;
  // En la cancha vertical el SVG gira -90°; fichas, balón y etiquetas giran +90° para quedar derechas.
  // El balón se agranda en la cancha vertical del celular para que se distinga bien.
@@ -872,112 +898,22 @@ const V97_MATCH_PATCH = String.raw`
 
  // ---------------------------------------------------------------- césped y líneas
  // Textura generada una sola vez: franjas de corte alineadas a las casillas, grano, desgaste y viñeta.
- function makeTexture(){
-  const W=VB.w,H=VB.h,ox=-VB.x,oy=-VB.y;
-  const cv=document.createElement('canvas');cv.width=W;cv.height=H;
-  const g=cv.getContext('2d');if(!g)return null;
-  let s=0x51F15E;
-  const rnd=()=>{s^=s<<13;s^=s>>>17;s^=s<<5;return (s>>>0)/4294967296;};
-  const base=g.createLinearGradient(0,0,0,H);
-  base.addColorStop(0,'#2f8040');base.addColorStop(.5,'#2c7a3c');base.addColorStop(1,'#286f37');
-  g.fillStyle=base;g.fillRect(0,0,W,H);
-  for(let c=-2;c<=19;c++){
-   if(((c%2)+2)%2===0)continue;
-   const sh=g.createLinearGradient(ox+c*100,0,ox+c*100+100,0);
-   sh.addColorStop(0,'rgba(190,255,170,.075)');sh.addColorStop(.5,'rgba(190,255,170,.095)');sh.addColorStop(1,'rgba(190,255,170,.07)');
-   g.fillStyle=sh;g.fillRect(ox+c*100,0,100,H);
-  }
-  for(let r=-1;r<=11;r++){if(((r%2)+2)%2===0){g.fillStyle='rgba(0,22,6,.05)';g.fillRect(0,oy+r*100,W,100);}}
-  const N=192,nc=document.createElement('canvas');nc.width=N;nc.height=N;
-  const ng=nc.getContext('2d');
-  if(ng){
-   const img=ng.createImageData(N,N);
-   for(let i=0;i<N*N;i++){
-    const v=rnd(),light=v>.5,a=Math.pow(Math.abs(v-.5)*2,2.4);
-    img.data[i*4]=light?215:0;img.data[i*4+1]=light?255:18;img.data[i*4+2]=light?195:4;img.data[i*4+3]=Math.round(a*52);
-   }
-   ng.putImageData(img,0,0);
-   g.fillStyle=g.createPattern(nc,'repeat');g.fillRect(0,0,W,H);
-  }
-  for(let i=0;i<16000;i++){
-   const x=rnd()*W,y=rnd()*H,l=2+rnd()*6;
-   g.fillStyle=rnd()>.48?'rgba(214,255,196,.055)':'rgba(0,26,8,.075)';
-   g.fillRect(x,y,1.1,l);
-  }
-  const wear=(x,y,rx,ry,a)=>{
-   g.save();g.translate(x,y);g.scale(1,ry/rx);
-   const w=g.createRadialGradient(0,0,0,0,0,rx);
-   w.addColorStop(0,'rgba(150,140,80,'+a+')');w.addColorStop(1,'rgba(150,140,80,0)');
-   g.fillStyle=w;g.beginPath();g.arc(0,0,rx,0,Math.PI*2);g.fill();g.restore();
-  };
-  wear(ox+60,oy+550,120,190,.13);wear(ox+1740,oy+550,120,190,.13);
-  wear(ox+900,oy+550,170,170,.07);wear(ox+200,oy+550,60,60,.08);wear(ox+1600,oy+550,60,60,.08);
-  g.fillStyle='rgba(2,18,8,.24)';
-  g.fillRect(0,0,W,oy-3);g.fillRect(0,oy+1103,W,H-oy-1103);
-  g.fillRect(0,oy-3,ox-3,1106);g.fillRect(ox+1803,oy-3,W-ox-1803,1106);
-  const light=(x,y,rad,a)=>{const l=g.createRadialGradient(x,y,0,x,y,rad);l.addColorStop(0,'rgba(255,255,236,'+a+')');l.addColorStop(1,'rgba(255,255,236,0)');g.fillStyle=l;g.fillRect(0,0,W,H);};
-  light(W*.22,-80,900,.07);light(W*.78,-80,900,.07);light(W*.5,H+120,800,.035);
-  const vg=g.createRadialGradient(W/2,H/2,Math.min(W,H)*.32,W/2,H/2,Math.max(W,H)*.72);
-  vg.addColorStop(0,'rgba(0,0,0,0)');vg.addColorStop(1,'rgba(0,0,0,.34)');
-  g.fillStyle=vg;g.fillRect(0,0,W,H);
-  try{return cv.toDataURL('image/jpeg',.86);}catch(e){return null;}
- }
- const goalParts={};
- function drawGoal(parent,side){
-  const right=side==='R',gx=right?1800:0,dir=right?1:-1,depth=66,top=400,bot=700,back=gx+dir*depth;
-  const g=svg('g',{class:'fu97-goal fu97-goal-'+side},parent);
-  svg('path',{class:'fu97-goal-shadow',d:'M'+gx+' '+(top+10)+'L'+(back+dir*16)+' '+(top+26)+'L'+(back+dir*16)+' '+(bot+30)+'L'+gx+' '+(bot+14)+'Z'},g);
-  const netD=b=>'M'+gx+' '+top+'L'+back+' '+(top+8)+'Q'+(back+dir*b)+' 550 '+back+' '+(bot-8)+'L'+gx+' '+bot+'Z';
-  const net=svg('path',{class:'fu97-goal-net',d:netD(0)},g);
-  const backLine=svg('path',{class:'fu97-goal-frame',d:'M'+back+' '+(top+8)+'Q'+back+' 550 '+back+' '+(bot-8)},g);
-  svg('path',{class:'fu97-goal-frame',d:'M'+gx+' '+top+'L'+back+' '+(top+8)+'M'+gx+' '+bot+'L'+back+' '+(bot-8)},g);
-  svg('line',{class:'fu97-goal-bar',x1:gx,y1:top,x2:gx,y2:bot},g);
-  svg('circle',{class:'fu97-goal-post',cx:gx,cy:top,r:8},g);
-  svg('circle',{class:'fu97-goal-post',cx:gx,cy:bot,r:8},g);
-  goalParts[side]={net,backLine,netD,back,top,bot,dir,gx};
- }
+ // Arcos de la foto original, medidos sobre la textura: boca sobre la línea de meta de la foto y red hacia afuera.
+ // No se dibujan arcos vectoriales encima (se verían dobles); esta geometría solo sirve para que el balón
+ // termine dentro de la red fotografiada en los goles.
+ const goalParts={
+  L:{gx:27,dir:-1,back:-25,top:478,bot:612},
+  R:{gx:1772,dir:1,back:1825,top:478,bot:612}
+ };
  function buildPitch(){
-  const tex=makeTexture();
-  if(tex&&textureEl){
-   textureEl.setAttribute('href',tex);
-   if(textureEl.hasAttribute('xlink:href'))textureEl.removeAttribute('xlink:href');
-   textureEl.setAttribute('x',VB.x);textureEl.setAttribute('y',VB.y);
-   textureEl.setAttribute('width',VB.w);textureEl.setAttribute('height',VB.h);
-   textureEl.setAttribute('preserveAspectRatio','none');
-   textureEl.classList.add('fu97-texture');
-  }
+  // v97.1: la cancha es la foto original del motor (césped, líneas, áreas y arcos fotografiados) con su filtro de
+  // color original. No se reemplaza por una textura generada ni se le dibujan líneas encima: las líneas vectoriales
+  // de v97 no coinciden con las de la foto (hasta 80 unidades de diferencia) y se verían dobles.
   fieldEl.setAttribute('viewBox',VB.x+' '+VB.y+' '+VB.w+' '+VB.h);
-  fieldEl.setAttribute('aria-label','Cancha de fútbol de 18 por 11 casillas');
-  grass.innerHTML='';
-  const pitch=svg('g',{class:'fu97-pitch','pointer-events':'none'},grass);
-  // Los arcos van en un grupo propio fuera de la capa estática: la red se anima en los goles.
-  const goals=svg('g',{id:'fu97Goals',class:'fu97-goals','pointer-events':'none'});
-  fieldEl.insertBefore(goals,grass.nextSibling);
-  drawGoal(goals,'L');drawGoal(goals,'R');
-  const L=svg('g',{class:'fu97-lines'},pitch);
-  svg('rect',{x:0,y:0,width:1800,height:1100},L);
-  svg('line',{x1:900,y1:0,x2:900,y2:1100},L);
-  svg('circle',{cx:900,cy:550,r:150},L);
-  [['L',0,1],['R',1800,-1]].forEach(sd=>{
-   const gx=sd[1],dir=sd[2];
-   svg('rect',{x:dir>0?0:1500,y:200,width:300,height:700},L);
-   svg('rect',{x:dir>0?0:1700,y:300,width:100,height:500},L);
-   svg('path',{d:'M'+(gx+dir*300)+' 438.2A150 150 0 0 '+(dir>0?1:0)+' '+(gx+dir*300)+' 661.8'},L);
-  });
-  svg('path',{d:'M28 0A28 28 0 0 1 0 28M1800 28A28 28 0 0 1 1772 0M1772 1100A28 28 0 0 1 1800 1072M0 1072A28 28 0 0 1 28 1100'},L);
-  // Banderines de córner, apuntando hacia afuera de la cancha.
-  const flags=svg('g',{class:'fu97-flags'},pitch);
-  [['',0,0],[' scale(-1 1)',1800,0],[' scale(1 -1)',0,1100],[' scale(-1 -1)',1800,1100]].forEach(f=>{
-   const fg=svg('g',{transform:'translate('+f[1]+' '+f[2]+')'+f[0]},flags);
-   svg('line',{class:'fu97-flag-pole',x1:0,y1:0,x2:-9,y2:-24},fg);
-   svg('path',{class:'fu97-flag-cloth',d:'M-9 -24L-27 -19.5L-9 -14Z'},fg);
-   svg('circle',{class:'fu97-flag-base',r:3.4},fg);
-  });
-  const spots=svg('g',{class:'fu97-spots'},pitch);
-  [[900,550],[200,550],[1600,550]].forEach(q=>svg('circle',{cx:q[0],cy:q[1],r:7.5},spots));
-  // Zonas clicables del arco: coinciden con las tres casillas de gol y el arco dibujado.
-  gL.setAttribute('x','-74');gL.setAttribute('y','400');gL.setAttribute('width','78');gL.setAttribute('height','300');
-  gR.setAttribute('x','1796');gR.setAttribute('y','400');gR.setAttribute('width','78');gR.setAttribute('height','300');
+  // Zonas clicables del arco: la parte de la red fotografiada que queda fuera de la cancha. No tapan las tres
+  // casillas de remate (columnas 0 y 17), que siguen recibiendo su clic.
+  gL.setAttribute('x','-40');gL.setAttribute('y','478');gL.setAttribute('width','40');gL.setAttribute('height','134');
+  gR.setAttribute('x','1800');gR.setAttribute('y','478');gR.setAttribute('width','40');gR.setAttribute('height','134');
  }
 
  // ---------------------------------------------------------------- capas de efectos
@@ -994,6 +930,8 @@ const V97_MATCH_PATCH = String.raw`
   fieldEl.insertBefore(fxHigh,ballG);
  }
  function fxLater(node,ms){setTimeout(()=>{if(node&&node.parentNode)node.parentNode.removeChild(node);},ms);}
+ // Desvanecido por atributo (sin transiciones CSS sobre hijos del SVG).
+ function fadeLater(node,ms){setTimeout(()=>{if(!node||!node.parentNode)return;rafAnimate(500,t=>{if(node.parentNode)node.setAttribute('opacity',(1-t).toFixed(3));}).then(()=>{if(node.parentNode)node.parentNode.removeChild(node);});},ms);}
  function dustPuff(x,y,color){
   if(reducedMotion()||!fxLow)return;
   const g=svg('g',{class:'fu97-dust',transform:'translate('+r1(x)+' '+r1(y)+')'},fxLow);
@@ -1049,7 +987,8 @@ const V97_MATCH_PATCH = String.raw`
    const t=svg('text',{y:6,'text-anchor':'middle'},up);t.textContent=String(step);
   }
   while(ghostG.childNodes.length>9)ghostG.removeChild(ghostG.firstChild);
-  if(!cpu)fxLater(g,3200);
+  // Las de la CPU se ven durante su turno y unos segundos después; el relato conserva la jugada.
+  if(!cpu)fxLater(g,3200);else fadeLater(g,6500);
  }
  function clearCpuGhosts(){if(ghostG)ghostG.querySelectorAll('.is-cpu').forEach(n=>n.remove());}
  // Inicio de cualquier animación de acción: se limpia la guía táctica para que la jugada se lea limpia.
@@ -1192,7 +1131,7 @@ const V97_MATCH_PATCH = String.raw`
   // 1) Precisión del pase por distancia: el mismo modelo que usa el motor (v96) para ejecutar y para la IA.
   const zones=svg('g',{class:'fu97-zones','clip-path':'url(#fu97FieldClip)'},rangeG);
   const sq=d=>({x:cx-(d+.5)*S,y:cy-(d+.5)*S,w:(2*d+1)*S,h:(2*d+1)*S});
-  // Se agrupan las distancias con el mismo nivel y se marca el borde de cada nivel.
+  // Se agrupan las distancias con el mismo nivel: tinte suave, sin bordes.
   const tiers=[];
   for(let d=1;d<=reach;d++){
    const tier=precisionTier(estimatedPassPrecision(x,from,{c:from.c+d,r:from.r}));
@@ -1201,21 +1140,17 @@ const V97_MATCH_PATCH = String.raw`
   }
   tiers.forEach(t=>{
    svg('path',{d:rectPath(sq(t.to))+' '+rectPath(sq(t.from-1)),'fill-rule':'evenodd',class:'fu97-zone is-'+t.tier},zones);
-   const q=sq(t.to);
-   svg('rect',{x:q.x,y:q.y,width:q.w,height:q.h,rx:10,class:'fu97-zone-edge is-'+t.tier},zones);
   });
   // 2) Receptores: carril libre, con riesgo, bloqueado o adelantado (funciones de evaluación del motor).
-  const lanes=svg('g',{class:'fu97-lanes'},targetsG);
+  //    Sin carriles dibujados hacia todos: el recorrido y el detalle aparecen al apuntar un destino (vista previa).
   const rings=svg('g',{class:'fu97-receivers'},targetsG);
-  const a=ballPoint({c:ball.c,r:ball.r,owner:x.id});
   p.forEach(z=>{
    if(z.t!==x.t||z.id===x.id)return;
    const to={c:z.c,r:z.r},dist=cheb(from,to);
    if(dist>reach)return;
    const st=laneStatus(x,from,z);
    const success=st.status==='blocked'||st.status==='offside'?0:estimatedPassPrecision(x,from,to)*(1-st.lane.risk);
-   const b=cellPoint(z.c,z.r),ctrl=ballCurve(a,b,x,dist,true);
-   svg('path',{class:'fu97-lane is-'+st.status,d:'M'+r1(a.x)+' '+r1(a.y)+'Q'+r1(ctrl.x)+' '+r1(ctrl.y)+' '+b.x+' '+b.y},lanes);
+   const b=cellPoint(z.c,z.r);
    const rg=svg('g',{class:'fu97-rcv is-'+st.status,transform:'translate('+b.x+' '+b.y+')'},rings);
    svg('circle',{r:41},rg);
    if(st.status==='blocked'||st.status==='offside'){
@@ -1223,12 +1158,14 @@ const V97_MATCH_PATCH = String.raw`
     svg('circle',{r:11},ic);
     svg('path',{d:st.status==='blocked'?'M-4.5-4.5 4.5 4.5M4.5-4.5-4.5 4.5':'M-3.5 5.5V-6M-3.5-6H5L2.5-3 5 0H-3.5'},ic);
    }
-   // En la cancha vertical (celular) la etiqueta se acorta para que siga siendo legible.
-   const pct=Math.round(success*100)+'%';
-   const tag=st.status==='free'?pct:st.status==='risk'?(vertical?pct+' !':pct+' · RIESGO'):(vertical?(st.status==='blocked'?'BLOQ.':'ADEL.'):st.label);
-   pill(rings,b.x,b.y+58,tag,'fu97-rcv-pill is-'+st.status+(st.status==='free'||st.status==='risk'?' is-'+precisionTier(success):''));
+   // Un solo número por compañero (probabilidad de que llegue); el riesgo lo dice el color del anillo y de la
+   // etiqueta. Bloqueado o adelantado: solo el ícono. En la última fila la etiqueta va arriba para no cortarse.
+   if(st.status==='free'||st.status==='risk'){
+    const below=z.r<R-1;
+    pill(rings,b.x,b.y+(below?58:-58),Math.round(success*100)+'%','fu97-rcv-pill is-'+st.status+' is-'+precisionTier(success));
+   }
   });
-  // 3) Remates: probabilidad estimada por el motor para cada casilla del arco.
+  // 3) Remates: casillas habilitadas y probabilidad de gol estimada por el motor (sin líneas de tiro).
   const side=x.t===1?'R':'L',goalC=side==='R'?C-1:0;
   const shots=[];
   for(let r=4;r<=6;r++){
@@ -1242,7 +1179,6 @@ const V97_MATCH_PATCH = String.raw`
     const pct=Math.round(s.est.probability*100);
     const tier=pct<=0?'none':pct<20?'low':pct<45?'mid':'high';
     const ex=X(s.end.c),ey=Y(s.end.r);
-    svg('line',{class:'fu97-shot is-'+tier,x1:r1(a.x),y1:r1(a.y),x2:ex,y2:ey},sg);
     svg('circle',{class:'fu97-shot-end is-'+tier,cx:ex,cy:ey,r:16},sg);
     pill(sg,ex+(side==='R'?-30:30),ey,pct+'%','fu97-shot-pill is-'+tier,side==='R'?'end':'start');
    });
@@ -1454,7 +1390,7 @@ const V97_MATCH_PATCH = String.raw`
   poly.setAttribute('points',left.concat(right.reverse()).join(' '));
  }
  function animateNet(gp,ms){
-  if(!gp||reducedMotion())return;
+  if(!gp||!gp.net||reducedMotion())return;
   rafAnimate(ms,t=>{
    const bulge=Math.sin(Math.PI*Math.min(1,t*1.6))*28*(1-t*.55)+Math.sin(t*Math.PI*5)*5*(1-t);
    gp.net.setAttribute('d',gp.netD(bulge));
@@ -1727,8 +1663,16 @@ const V97_MATCH_PATCH = String.raw`
   if(turnLine)status.appendChild(turnLine);
   const stateEl=$('state');if(stateEl)status.appendChild(stateEl);
   if(cpuEl)status.appendChild(cpuEl);
-  const legend=card(side,'fu97-card-legend','Cómo leer la cancha',ICONS.legend);
+  const legend=card(side,'fu97-card-legend is-collapsed','Cómo leer la cancha',ICONS.legend);
   const ul=el('ul','fu97-legend',legend);
+  // La guía es de consulta: queda plegada y se abre desde su título (clic, Enter o espacio).
+  const lt=legend.querySelector('.fu97-card-title');
+  if(lt){
+   lt.setAttribute('role','button');lt.tabIndex=0;lt.setAttribute('aria-expanded','false');
+   const toggleLegend=()=>{const open=legend.classList.toggle('is-collapsed')===false;lt.setAttribute('aria-expanded',String(open));scheduleSize();};
+   lt.addEventListener('click',toggleLegend);
+   lt.addEventListener('keydown',e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();toggleLegend();}});
+  }
   LEGEND.forEach(item=>{const li=el('li',null,ul);li.innerHTML=item[0]+'<span><b>'+escapeText(item[1])+'</b><small>'+escapeText(item[2])+'</small></span>';});
   if(narrative){const story=card(side,'fu97-card-story',null);story.appendChild(narrative);}
   const matchCard=card(side,'fu97-card-match','Partido',ICONS.match);
