@@ -16,3 +16,11 @@ Publicación: subí el contenido completo de este ZIP a Cloudflare Pages. Deben 
 
 
 Corrección v96.5.5: los accesos internos Inicio → Práctica/Torneo se capturan leyendo el parámetro ?page antes de resolver la ruta; esto impide abrir una copia anidada del portal y evita la duplicación de la navegación.
+
+Rediseño visual v97 (pantalla de partido, Práctica y Torneo): app.js incorpora una capa exclusivamente visual
+(V97_MATCH_STYLES y V97_MATCH_PATCH) que se instala después de v96. Cambia la cancha, las fichas, el balón,
+las animaciones, las guías tácticas y la organización de marcador, reloj, paneles y controles; en celular
+vertical la cancha se muestra completa y girada (con opción «Ampliar» para la vista desplazable anterior).
+No modifica la carpeta baseline ni las reglas, probabilidades, resolución de acciones, cronómetro o IA:
+los porcentajes que se muestran salen de las mismas funciones de estimación del motor.
+Si la capa visual no superara su control de sintaxis, el partido se carga con la vista v96.
