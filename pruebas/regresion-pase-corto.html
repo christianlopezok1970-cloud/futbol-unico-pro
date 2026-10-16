@@ -1,0 +1,357 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<!-- La página vive en /pruebas/ pero carga el juego desde la raíz, igual que index.html. -->
+<base href="../">
+<title>Fútbol Único · Prueba de regresión · pase corto y pelota suelta</title>
+<style>
+  :root { color-scheme: dark; --ok:#c8ff2e; --bad:#ff5263; --mut:#93a0b4; --line:rgba(233,238,246,.12); }
+  body { margin:0; background:#06080c; color:#e9eef6; font:14px/1.45 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif; }
+  main { max-width:1100px; margin:0 auto; padding:24px 18px 60px; }
+  h1 { font-size:20px; margin:0 0 6px; letter-spacing:-.01em; }
+  p.lead { color:var(--mut); margin:0 0 18px; }
+  #summary { display:flex; gap:12px; flex-wrap:wrap; align-items:center; padding:12px 14px; border:1px solid var(--line); border-radius:6px; background:#0b0f16; margin-bottom:14px; }
+  #summary strong { font-size:16px; }
+  .pill { padding:3px 9px; border-radius:999px; font-weight:800; font-size:12px; letter-spacing:.06em; }
+  .pill.ok { background:rgba(200,255,46,.12); color:var(--ok); } .pill.bad { background:rgba(255,82,99,.14); color:var(--bad); } .pill.run { background:rgba(62,230,255,.1); color:#3ee6ff; }
+  table { width:100%; border-collapse:collapse; font-size:13px; }
+  th, td { text-align:left; padding:7px 8px; border-bottom:1px solid var(--line); vertical-align:top; }
+  th { color:var(--mut); font-size:11px; letter-spacing:.08em; text-transform:uppercase; }
+  td.res { font-weight:800; white-space:nowrap; } td.res.ok { color:var(--ok); } td.res.bad { color:var(--bad); }
+  td.det { color:var(--mut); font-family:ui-monospace,SFMono-Regular,Menlo,monospace; font-size:12px; }
+  tr.group td { color:#3ee6ff; font-weight:800; padding-top:16px; border-bottom-color:rgba(62,230,255,.25); }
+  .stage-wrap { margin-top:22px; border:1px solid var(--line); border-radius:6px; overflow:hidden; }
+  .stage-wrap > p { margin:0; padding:8px 12px; color:var(--mut); font-size:12px; border-bottom:1px solid var(--line); }
+  #fuGameStage { height:640px; position:relative; }
+  #fuGameStage iframe { width:100%; height:100%; border:0; display:block; }
+  .fu-shell-header, #fuLoading small { display:none; }
+</style>
+<script>
+  // Aislamiento del almacenamiento: la prueba no lee ni escribe los datos guardados del jugador
+  // (historial y análisis de partidas, memoria defensiva de la CPU, identidad táctica, torneo).
+  // localStorage se reemplaza por uno en memoria en esta página y dentro del partido de prueba.
+  function installMemoryStorage(win) {
+    var data = new Map();
+    var store = {
+      getItem: function (k) { k = String(k); return data.has(k) ? data.get(k) : null; },
+      setItem: function (k, v) { data.set(String(k), String(v)); },
+      removeItem: function (k) { data.delete(String(k)); },
+      clear: function () { data.clear(); },
+      key: function (i) { var keys = Array.from(data.keys()); return i >= 0 && i < keys.length ? keys[i] : null; },
+      get length() { return data.size; }
+    };
+    try { Object.defineProperty(win, 'localStorage', { configurable: true, enumerable: true, get: function () { return store; } }); win.__fuStorageIsolated = win.localStorage === store; }
+    catch (error) { win.__fuStorageIsolated = false; }
+  }
+  installMemoryStorage(window);
+  // app.js elige la página con ?page=...; Práctica carga el motor del partido (el mismo que Torneo).
+  (function () {
+    var url = new URL(location.href);
+    if (url.searchParams.get('page') !== 'practice') { url.searchParams.set('page', 'practice'); history.replaceState(null, '', url.pathname + url.search); }
+  })();
+</script>
+<script src="app.js" defer></script>
+</head>
+<body>
+  <!-- Elementos que app.js necesita encontrar (cabecera oculta del portal). -->
+  <header class="fu-shell-header">
+    <button id="fuBrand" type="button">FU</button>
+    <span id="fuStatusDot"></span><strong id="fuStatusTitle"></strong><small id="fuStatusText"></small>
+  </header>
+  <main>
+    <h1>Prueba de regresión · pase fallido que no sale de la casilla del pasador</h1>
+    <p class="lead">Ejecuta el motor real (baseline protegida + parches de app.js) con tiradas de azar fijadas y comprueba,
+      para el equipo humano y para la CPU en situaciones espejadas, que la pelota suelta nunca comparta casilla con una ficha
+      y que cualquiera de los dos equipos pueda recuperarla según las reglas. No modifica el juego: el acceso al estado del
+      motor se agrega sólo dentro de esta página, y el almacenamiento queda aislado en memoria, así que no toca
+      partidas, historial ni memoria de la CPU guardados en este navegador.</p>
+    <section id="summary"><span class="pill run" id="state">EJECUTANDO</span><strong id="totals">Cargando el motor…</strong><span id="v98"></span></section>
+    <table>
+      <thead><tr><th>Prueba</th><th>Resultado</th><th>Detalle</th></tr></thead>
+      <tbody id="rows"></tbody>
+    </table>
+    <div class="stage-wrap">
+      <p>Partido real usado por la prueba (las posiciones cambian según cada escenario).</p>
+      <div id="fuGameStage" aria-busy="true">
+        <div id="fuLoading"><strong>Preparando</strong><small></small></div>
+        <div id="fuError" hidden><p id="fuErrorText"></p><button type="button" id="fuRetry">Reintentar</button></div>
+      </div>
+    </div>
+  </main>
+<script>
+(function () {
+  'use strict';
+  // ---------------------------------------------------------------------------------------------
+  // Gancho de prueba: se inserta en el código del motor SÓLO dentro de esta página, justo antes del
+  // cierre de la capa v97 (o de v96 si la visual no está), para leer el estado real del motor y fijar
+  // las tiradas de azar de una acción concreta. Las tiradas fijadas se consumen sólo fuera de las
+  // simulaciones internas de la CPU (simulationRandomState === null), igual que tacticalRandom().
+  // ---------------------------------------------------------------------------------------------
+  function engineHook() {
+    var nativeRandom = Math.random, forced = [], consumed = [], lastChosen = null;
+    Math.random = function () {
+      if (forced.length && simulationRandomState === null) { var v = forced.shift(); consumed.push(v); return v; }
+      return nativeRandom();
+    };
+    function find(t, n) { return p.find(function (y) { return y.t === t && y.n === n; }); }
+    function invariant() {
+      if (ball.owner !== null) { var o = p.find(function (z) { return z.id === ball.owner; }); return !!o && o.c === ball.c && o.r === ball.r; }
+      return !p.some(function (z) { return z.c === ball.c && z.r === ball.r; });
+    }
+    function snap() {
+      var occ = p.find(function (z) { return z.c === ball.c && z.r === ball.r; });
+      return { ball: { c: ball.c, r: ball.r, owner: ball.owner }, turn: turn, actionNo: actionNo, anim: anim, clock: matchClockActions,
+        played: playedThisTurn.slice(), msg: msg.textContent, cpuAuto: cpuAutoEnabled, cpuSearching: cpuSearching,
+        occupant: occ ? { id: occ.id, t: occ.t, n: occ.n } : null, invariant: invariant(),
+        players: p.map(function (z) { return { id: z.id, t: z.t, n: z.n, c: z.c, r: z.r }; }) };
+    }
+    function slim(a) { return a ? { kind: a.kind, playerId: a.playerId, t: a.player ? a.player.t : null, n: a.player ? a.player.n : null, to: a.to ? { c: a.to.c, r: a.to.r } : null } : null; }
+    window.__fuTest = {
+      v98: typeof fuV98ShortPassRestCell === 'function',
+      snap: snap, invariant: invariant,
+      id: function (t, n) { var z = find(t, n); return z ? z.id : null; },
+      forceRandom: function (values) { forced = values.slice(); consumed = []; },
+      consumed: function () { return consumed.slice(); },
+      forcedLeft: function () { return forced.length; },
+      setup: function (cfg) {
+        cancelCpuTimer(); cpuEpoch++;
+        p = FORMATION.map(function (d, i) { return { id: i, t: d[0], n: d[1], c: d[2], r: d[3] }; });
+        cfg.players.forEach(function (q) { var z = find(q.t, q.n); z.c = q.c; z.r = q.r; });
+        var h = find(cfg.ballOwner.t, cfg.ballOwner.n); ball = { c: h.c, r: h.r, owner: h.id };
+        turn = cfg.turn; actionNo = cfg.actionNo || 1; lastPlayedId = null;
+        playedThisTurn = (cfg.played || []).map(function (q) { return find(q.t, q.n).id; });
+        kickoffPassRequired = false; restartPassOnlyId = null; freeKickRequiredId = null; freeKickAwardedTeam = null;
+        selected = null; mode = 'player'; anim = false; cpuAutoEnabled = false; cpuRejectedKeys.clear();
+        try { clearRecommendation(); } catch (e) {}
+        drawPlayers(); drawBall(); setTurn(); refresh();
+        return snap();
+      },
+      candidates: function () { return tacticalCandidates().map(slim); },
+      // Mismo despachador que usa runCpuAction() cuando la CPU ya eligió su jugada.
+      cpuDispatch: function (spec) {
+        cancelCpuTimer();
+        var x = p.find(function (z) { return z.id === spec.playerId; });
+        var a = { kind: spec.kind, player: x, playerId: x.id, from: { c: x.c, r: x.r }, to: { c: spec.to.c, r: spec.to.r }, label: 'prueba' };
+        cpuAutoEnabled = true; var started = dispatchCpuAction(a);
+        cpuAutoEnabled = false; cpuEpoch++; cancelCpuTimer();
+        return started;
+      },
+      // Decisión completa de la CPU (búsqueda real); devuelve la jugada elegida sin ejecutarla.
+      cpuChoose: async function () {
+        cpuAutoEnabled = true; cancelCpuTimer(); var chosen = null;
+        try { chosen = await chooseCpuMove(cpuEpoch); } finally { cpuSearching = false; cpuAutoEnabled = false; }
+        lastChosen = chosen; return slim(chosen);
+      },
+      setCpuAuto: function (on) { cpuAutoEnabled = !!on; cpuEpoch++; cancelCpuTimer(); if (on) { cpuRejectedKeys.clear(); maybeScheduleCpuAction(60); } },
+      // simulateOneAction es la simulación con la que la CPU anticipa jugadas.
+      simulate: function (t, n, c, r) {
+        var st = captureSequenceState(), x = find(t, n);
+        var res = simulateOneAction({ kind: 'pass', player: x, playerId: x.id, from: { c: ball.c, r: ball.r }, to: { c: c, r: r } }, [0, 0]);
+        var out = { result: res, ball: { c: ball.c, r: ball.r, owner: ball.owner }, invariant: invariant() };
+        restoreSequenceState(st); drawPlayers(); drawBall(); refresh();
+        return out;
+      }
+    };
+  }
+  var HOOK = ';(' + engineHook.toString() + ')();\n';
+  var MARKS = ['// ================== FIN FÚTBOL ÚNICO v97 ==================', '// ================== FIN FUTBOL UNICO v96 =================='];
+  var stage = document.getElementById('fuGameStage');
+  var nativeAppend = stage.appendChild.bind(stage);
+  var STORAGE = '<script>(' + installMemoryStorage.toString() + ')(window);<\/script>';
+  stage.appendChild = function (node) {
+    if (node && node.tagName === 'IFRAME' && node.srcdoc) {
+      var html = node.srcdoc, mark = MARKS.find(function (m) { return html.indexOf(m) >= 0; });
+      if (mark) html = html.replace(mark, HOOK + mark);
+      // El almacenamiento en memoria se instala antes que cualquier script del partido.
+      html = /<head[^>]*>/i.test(html) ? html.replace(/<head[^>]*>/i, function (tag) { return tag + STORAGE; }) : STORAGE + html;
+      node.srcdoc = html;
+    }
+    return nativeAppend(node);
+  };
+
+  // ---------------------------------------------------------------------------------------------
+  // Escenarios. Equipo A = equipo del pasador. Las posiciones del equipo 2 son el espejo exacto de
+  // las del equipo 1 (columna c -> 17 - c), como en la formación inicial del juego.
+  // ---------------------------------------------------------------------------------------------
+  var COLS = 18;
+  var LAYOUT_A = [
+    { a: 1, n: 1, c: 0, r: 5 }, { a: 1, n: 3, c: 2, r: 2 }, { a: 1, n: 2, c: 3, r: 4 }, { a: 1, n: 4, c: 2, r: 8 },
+    { a: 1, n: 6, c: 6, r: 5 }, { a: 1, n: 5, c: 7, r: 5 }, { a: 1, n: 8, c: 4, r: 9 }, { a: 1, n: 7, c: 4, r: 1 },
+    { a: 1, n: 9, c: 9, r: 2 }, { a: 1, n: 10, c: 8, r: 8 }, { a: 1, n: 11, c: 9, r: 9 },
+    { a: 0, n: 1, c: 17, r: 5 }, { a: 0, n: 3, c: 15, r: 2 }, { a: 0, n: 2, c: 15, r: 4 }, { a: 0, n: 6, c: 15, r: 6 },
+    { a: 0, n: 4, c: 15, r: 8 }, { a: 0, n: 5, c: 12, r: 5 }, { a: 0, n: 8, c: 12, r: 9 }, { a: 0, n: 7, c: 12, r: 1 },
+    { a: 0, n: 10, c: 9, r: 4 }, { a: 0, n: 9, c: 6, r: 7 }, { a: 0, n: 11, c: 5, r: 5 }
+  ];
+  function layout(teamA) { var B = teamA === 1 ? 2 : 1; return LAYOUT_A.map(function (q) { return { t: q.a ? teamA : B, n: q.n, c: teamA === 1 ? q.c : COLS - 1 - q.c, r: q.r }; }); }
+  function mc(teamA, c) { return teamA === 1 ? c : COLS - 1 - c; }
+  var FAIL_SHORT = [0.999, 0.5, 0.1];   // precisión fallida, magnitud, corto (< .5)
+  var FAIL_LONG = [0.999, 0.5, 0.9];    // precisión fallida, magnitud, largo (>= .5)
+  var PRECISE = [0.0];
+
+  var rows = document.getElementById('rows'), results = [];
+  function group(title) { step = title; var tr = document.createElement('tr'); tr.className = 'group'; tr.innerHTML = '<td colspan="3"></td>'; tr.firstChild.textContent = title; rows.appendChild(tr); }
+  function check(name, ok, detail) {
+    step = name;
+    results.push({ name: name, ok: !!ok, detail: detail || '' });
+    var tr = document.createElement('tr');
+    tr.innerHTML = '<td></td><td class="res ' + (ok ? 'ok' : 'bad') + '">' + (ok ? 'CORRECTO' : 'FALLA') + '</td><td class="det"></td>';
+    tr.children[0].textContent = name; tr.children[2].textContent = detail || ''; rows.appendChild(tr);
+  }
+  var sleep = function (ms) { return new Promise(function (r) { setTimeout(r, ms); }); };
+  var frame = null, F = null, D = null;
+  var step = '';
+  async function idle(timeout) {
+    var t0 = Date.now(), since = null;
+    while (Date.now() - t0 < (timeout || 60000)) {
+      var s = F.snap();
+      if (!s.anim && !s.cpuSearching) { since = since || Date.now(); if (Date.now() - since > 120) return true; } else since = null;
+      await sleep(40);
+    }
+    throw new Error('El motor no quedó en reposo en: ' + step);
+  }
+  function click(el) { el.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, view: frame.contentWindow })); }
+  function token(t, n) { return D.querySelector('#players [data-id="' + F.id(t, n) + '"]'); }
+  function cell(c, r) { return D.querySelector('rect.cell[data-c="' + c + '"][data-r="' + r + '"]'); }
+  // Recorrido humano: los mismos manejadores de clic del tablero (clickP / onCell) que usa el jugador.
+  async function humanPass(t, n, toT, toN, toC, toR) {
+    click(token(t, n)); await sleep(30);
+    D.getElementById('ballModeControl').click(); await sleep(30);
+    if (toN != null) click(token(toT, toN)); else click(cell(toC, toR));
+    await sleep(60); await idle();
+  }
+  async function humanMove(t, n, c, r) { click(token(t, n)); await sleep(30); click(cell(c, r)); await sleep(60); await idle(); }
+  async function cpuAct(kind, t, n, c, r) { var started = F.cpuDispatch({ kind: kind, playerId: F.id(t, n), to: { c: c, r: r } }); await sleep(60); await idle(); return started; }
+  var cheb = function (a, b) { return Math.max(Math.abs(a.c - b.c), Math.abs(a.r - b.r)); };
+  var fmt = function (b) { return '(' + b.c + ',' + b.r + ')' + (b.owner === null ? ' suelta' : ' de id ' + b.owner); };
+  var sameArr = function (a, b) { return a.length === b.length && a.every(function (v, i) { return v === b[i]; }); };
+
+  // Pase fallido "corto hasta el origen" y sus comprobaciones, para el equipo indicado.
+  async function failedPassScenario(A, actionNo, played) {
+    var who = A === 1 ? 'humano' : 'CPU';
+    F.setup({ players: layout(A), ballOwner: { t: A, n: 6 }, turn: A, actionNo: actionNo, played: played });
+    var before = F.snap(), passer = { c: mc(A, 6), r: 5 }, target = { c: mc(A, 7), r: 5 }, passerId = F.id(A, 6);
+    F.forceRandom(FAIL_SHORT);
+    if (A === 1) await humanPass(1, 6, 1, 5); else await cpuAct('pass', 2, 6, target.c, target.r);
+    var s = F.snap(), used = F.consumed();
+    check('[' + who + '] La acción se ejecuta y consume una acción del reloj', s.clock === before.clock + 1, 'reloj ' + before.clock + ' → ' + s.clock);
+    check('[' + who + '] Usa exactamente las mismas tiradas de azar (precisión, magnitud, corto)', sameArr(used, FAIL_SHORT) && F.forcedLeft() === 0, 'tiradas usadas: ' + JSON.stringify(used));
+    check('[' + who + '] El pase queda registrado como fallido y corto', /Pase fallido: quedó corto/.test(s.msg), s.msg.slice(0, 120));
+    check('[' + who + '] El pasador no recibe su propio pase fallido', s.ball.owner !== passerId, 'pelota ' + fmt(s.ball));
+    check('[' + who + '] La pelota queda suelta, sin poseedor', s.ball.owner === null, 'pelota ' + fmt(s.ball));
+    check('[' + who + '] La pelota suelta no comparte casilla con ninguna ficha', s.invariant, s.occupant ? 'ocupada por el Jugador ' + s.occupant.n + ' del Equipo ' + s.occupant.t : 'casilla libre');
+    check('[' + who + '] Queda junto al pasador (distancia 1) y no en el destino elegido', cheb(s.ball, passer) === 1 && !(s.ball.c === target.c && s.ball.r === target.r), 'pasador (' + passer.c + ',' + passer.r + ') · pelota ' + fmt(s.ball));
+    return s;
+  }
+
+  async function run() {
+    var iframe = null;
+    for (var i = 0; i < 400 && !(iframe && iframe.contentWindow && iframe.contentWindow.__fuTest && iframe.contentDocument.querySelector('rect.cell')); i++) { iframe = stage.querySelector('iframe'); await sleep(100); }
+    if (!iframe || !iframe.contentWindow.__fuTest) throw new Error('No se pudo cargar el motor del partido.');
+    frame = iframe; F = iframe.contentWindow.__fuTest; D = iframe.contentDocument;
+    if (window.__fuStorageIsolated !== true || iframe.contentWindow.__fuStorageIsolated !== true)
+      throw new Error('No se pudo aislar el almacenamiento del navegador; la prueba no se ejecutó para no modificar datos guardados.');
+    document.getElementById('v98').textContent = 'Corrección v98 instalada: ' + (F.v98 ? 'sí' : 'no');
+    await sleep(400);
+
+    group('1. Pase fallido del equipo humano (la pelota no sale de la casilla del pasador)');
+    var h = await failedPassScenario(1, 3, [{ t: 1, n: 3 }, { t: 1, n: 2 }]);
+    check('[humano] Tras la tercera acción el turno pasa a la CPU', h.turn === 2 && h.actionNo === 1, 'turno ' + h.turn + ', acción ' + h.actionNo);
+    group('2. Recuperación legal por el rival (CPU) después del fallo humano');
+    var cpuCollect = F.candidates().filter(function (a) { return a.kind === 'collect' && a.t === 2; });
+    check('[CPU] Tiene al menos una recuperación legal de la pelota suelta', cpuCollect.length > 0, cpuCollect.map(function (a) { return 'Jugador ' + a.n + ' → (' + a.to.c + ',' + a.to.r + ')'; }).join(' · ') || 'ninguna opción de recuperar');
+    if (cpuCollect.length) {
+      var c0 = F.snap(); await cpuAct('collect', 2, cpuCollect[0].n, cpuCollect[0].to.c, cpuCollect[0].to.r); var c1 = F.snap();
+      var owner = c1.players.find(function (z) { return z.id === c1.ball.owner; });
+      check('[CPU] Al entrar en la casilla recoge la pelota y queda en posesión', !!owner && owner.t === 2 && c1.invariant && c1.clock === c0.clock + 1, owner ? 'posesión: Jugador ' + owner.n + ' del Equipo ' + owner.t : 'sin posesión');
+    } else check('[CPU] Al entrar en la casilla recoge la pelota y queda en posesión', false, 'no hay recuperación posible');
+
+    group('3. Pase fallido de la CPU en la situación espejada');
+    var c = await failedPassScenario(2, 3, [{ t: 2, n: 3 }, { t: 2, n: 2 }]);
+    check('[CPU] Tras la tercera acción el turno pasa al humano', c.turn === 1 && c.actionNo === 1, 'turno ' + c.turn + ', acción ' + c.actionNo);
+    check('Ambos equipos obtienen el resultado espejado (misma regla para los dos)', c.ball.c === COLS - 1 - h.ball.c && c.ball.r === h.ball.r && c.ball.owner === null && h.ball.owner === null, 'humano ' + fmt(h.ball) + ' · CPU ' + fmt(c.ball));
+    group('4. Recuperación legal por el humano después del fallo de la CPU');
+    var humanCollect = F.candidates().filter(function (a) { return a.kind === 'collect' && a.t === 1; });
+    check('[humano] Tiene al menos una recuperación legal de la pelota suelta', humanCollect.length > 0, humanCollect.map(function (a) { return 'Jugador ' + a.n + ' → (' + a.to.c + ',' + a.to.r + ')'; }).join(' · ') || 'ninguna opción de recuperar');
+    if (humanCollect.length) {
+      var u0 = F.snap(); await humanMove(1, humanCollect[0].n, humanCollect[0].to.c, humanCollect[0].to.r); var u1 = F.snap();
+      var hOwner = u1.players.find(function (z) { return z.id === u1.ball.owner; });
+      check('[humano] Con clics en el tablero entra en la casilla y recoge la pelota', !!hOwner && hOwner.t === 1 && u1.invariant && u1.clock === u0.clock + 1, hOwner ? 'posesión: Jugador ' + hOwner.n + ' del Equipo ' + hOwner.t + ' · ' + u1.msg.slice(0, 60) : 'sin posesión · ' + u1.msg.slice(0, 90));
+    } else check('[humano] Con clics en el tablero entra en la casilla y recoge la pelota', false, 'no hay recuperación posible');
+
+    group('5. Recuperación por el propio equipo del pasador en el mismo turno');
+    for (var A = 1; A <= 2; A++) {
+      var who = A === 1 ? 'humano' : 'CPU';
+      F.setup({ players: layout(A), ballOwner: { t: A, n: 6 }, turn: A, actionNo: 1, played: [] });
+      F.forceRandom(FAIL_SHORT);
+      if (A === 1) await humanPass(1, 6, 1, 5); else await cpuAct('pass', 2, 6, mc(2, 7), 5);
+      var s1 = F.snap(), cand = F.candidates().filter(function (a) { return a.kind === 'collect' && a.t === A && a.n === 5; })[0];
+      if (cand) { if (A === 1) await humanMove(1, 5, cand.to.c, cand.to.r); else await cpuAct('collect', 2, 5, cand.to.c, cand.to.r); }
+      var s2 = F.snap(), own = s2.players.find(function (z) { return z.id === s2.ball.owner; });
+      check('[' + who + '] Un compañero que todavía no jugó puede recoger la pelota suelta', !!cand && !!own && own.t === A && own.n === 5 && s2.invariant && s2.actionNo === 3, 'pelota tras el fallo ' + fmt(s1.ball) + ' · ' + (own ? 'posesión: Jugador ' + own.n + ' del Equipo ' + own.t : 'sin recuperación posible'));
+    }
+
+    group('6. La simulación interna de la CPU coincide con el motor real');
+    for (var B = 1; B <= 2; B++) {
+      F.setup({ players: layout(B), ballOwner: { t: B, n: 6 }, turn: B, actionNo: 1, played: [] });
+      F.forceRandom(FAIL_SHORT); var sim = F.simulate(B, 6, mc(B, 7), 5);
+      F.forceRandom(FAIL_SHORT);
+      if (B === 1) await humanPass(1, 6, 1, 5); else await cpuAct('pass', 2, 6, mc(2, 7), 5);
+      var real = F.snap();
+      check('[equipo ' + B + '] simulateOneAction deja la pelota donde la deja el motor real', sim.result === false && sim.ball.c === real.ball.c && sim.ball.r === real.ball.r && sim.ball.owner === real.ball.owner && sim.invariant, 'simulación ' + fmt(sim.ball) + ' · real ' + fmt(real.ball));
+    }
+
+    group('7. Pase completado y otros desvíos (sin cambios)');
+    for (var E = 1; E <= 2; E++) {
+      var whoE = E === 1 ? 'humano' : 'CPU';
+      F.setup({ players: layout(E), ballOwner: { t: E, n: 6 }, turn: E, actionNo: 1, played: [] });
+      var p0 = F.snap(); F.forceRandom(PRECISE);
+      if (E === 1) await humanPass(1, 6, 1, 5); else await cpuAct('pass', 2, 6, mc(2, 7), 5);
+      var p1 = F.snap(), rcv = p1.players.find(function (z) { return z.id === p1.ball.owner; });
+      check('[' + whoE + '] Pase preciso: el compañero recibe y la posesión continúa', !!rcv && rcv.t === E && rcv.n === 5 && p1.ball.c === mc(E, 7) && p1.ball.r === 5 && p1.invariant && p1.clock === p0.clock + 1, rcv ? 'recibe el Jugador ' + rcv.n + ' en (' + p1.ball.c + ',' + p1.ball.r + ')' : 'pelota ' + fmt(p1.ball));
+      F.setup({ players: layout(E), ballOwner: { t: E, n: 6 }, turn: E, actionNo: 1, played: [] });
+      F.forceRandom(FAIL_LONG);
+      if (E === 1) await humanPass(1, 6, 1, 5); else await cpuAct('pass', 2, 6, mc(2, 7), 5);
+      var l1 = F.snap();
+      check('[' + whoE + '] Pase largo fallido: sigue terminando un casillero detrás del destino', l1.ball.c === mc(E, 8) && l1.ball.r === 5 && l1.ball.owner === null && l1.invariant, 'pelota ' + fmt(l1.ball));
+      // Jugador regular (dorsal 2) a distancia 3 con desvío corto de 3 casillas: el otro caso que volvía al origen.
+      F.setup({ players: layout(E), ballOwner: { t: E, n: 2 }, turn: E, actionNo: 1, played: [] });
+      var r0 = F.snap(); F.forceRandom([0.999, 0.95, 0.1]);
+      if (E === 1) await humanPass(1, 2, 1, 7); else await cpuAct('pass', 2, 2, mc(2, 4), 1);
+      var r1 = F.snap();
+      check('[' + whoE + '] Dorsal 2 a distancia 3, corto 3: la pelota queda suelta en casilla libre junto al pasador', /quedó corto 3 casilleros \(distancia: 3\)/.test(r1.msg) && r1.ball.owner === null && r1.invariant && cheb(r1.ball, { c: mc(E, 3), r: 4 }) === 1 && r1.clock === r0.clock + 1 && sameArr(F.consumed(), [0.999, 0.95, 0.1]), 'pelota ' + fmt(r1.ball) + ' · ' + r1.msg.slice(0, 70));
+    }
+
+    group('8. Continuidad de turnos y acciones después del fallo');
+    F.setup({ players: layout(1), ballOwner: { t: 1, n: 6 }, turn: 1, actionNo: 1, played: [] });
+    var k0 = F.snap(), states = [];
+    F.forceRandom(FAIL_SHORT); await humanPass(1, 6, 1, 5); states.push(F.snap());
+    await humanMove(1, 3, 2, 3); states.push(F.snap());
+    await humanMove(1, 4, 2, 7); states.push(F.snap());
+    var k3 = F.snap();
+    check('[humano] Después del fallo se completan las acciones 2 y 3 con otros jugadores', states[0].actionNo === 2 && states[1].actionNo === 3 && k3.turn === 2 && k3.clock === k0.clock + 3, 'acciones: ' + states.map(function (z) { return z.turn + '/' + z.actionNo; }).join(' → '));
+    F.setCpuAuto(true);
+    var t0 = Date.now(), bad = 0, samples = 0;
+    // Sólo se mide el estado real del juego: durante la búsqueda la CPU usa el estado global como borrador
+    // (lo restaura al terminar) y durante una animación la pelota viaja entre casillas.
+    while (Date.now() - t0 < 90000) { var z = F.snap(); if (!z.anim && !z.cpuSearching) { samples++; if (!z.invariant) bad++; if (z.turn === 1) break; } await sleep(25); }
+    var k4 = F.snap(); F.setCpuAuto(false);
+    check('[CPU] Juega su turno completo y devuelve el turno sin pausarse', k4.turn === 1 && k4.clock === k3.clock + 3, 'reloj ' + k3.clock + ' → ' + k4.clock + ' · turno ' + k4.turn + ' · ' + k4.msg.slice(0, 70));
+    check('El estado del balón es coherente durante el resto del turno humano y todo el turno de la CPU', bad === 0 && k4.invariant, samples + ' lecturas del estado real, ' + bad + ' con la pelota fuera de lugar · pelota final ' + fmt(k4.ball));
+
+    var failed = results.filter(function (x) { return !x.ok; }).length;
+    finish(failed === 0, results.length - failed, failed);
+  }
+  function finish(ok, passed, failed, error) {
+    var st = document.getElementById('state');
+    st.textContent = ok ? 'CORRECTO' : 'FALLA'; st.className = 'pill ' + (ok ? 'ok' : 'bad');
+    document.getElementById('totals').textContent = error ? 'Error: ' + error : passed + ' comprobaciones correctas, ' + failed + ' con falla';
+    document.title = (ok ? 'OK · ' : 'FALLA · ') + document.title;
+    window.__FU_REGRESSION_RESULT = { ok: ok, passed: passed, failed: failed, v98: !!(F && F.v98), error: error || null, results: results };
+  }
+  window.addEventListener('load', function () { run().catch(function (e) { finish(false, results.filter(function (x) { return x.ok; }).length, results.filter(function (x) { return !x.ok; }).length + 1, String(e && e.message || e)); }); });
+})();
+</script>
+</body>
+</html>

@@ -16,3 +16,127 @@ Publicación: subí el contenido completo de este ZIP a Cloudflare Pages. Deben 
 
 
 Corrección v96.5.5: los accesos internos Inicio → Práctica/Torneo se capturan leyendo el parámetro ?page antes de resolver la ruta; esto impide abrir una copia anidada del portal y evita la duplicación de la navegación.
+
+Rediseño visual v97 (pantalla de partido, Práctica y Torneo): app.js incorpora una capa exclusivamente visual
+(V97_MATCH_STYLES y V97_MATCH_PATCH) que se instala después de v96. Cambia la cancha, las fichas, el balón,
+las animaciones, las guías tácticas y la organización de marcador, reloj, paneles y controles; en celular
+vertical la cancha se muestra completa y girada (con opción «Ampliar» para la vista desplazable anterior).
+No modifica la carpeta baseline ni las reglas, probabilidades, resolución de acciones, cronómetro o IA:
+los porcentajes que se muestran salen de las mismas funciones de estimación del motor.
+Si la capa visual no superara su control de sintaxis, el partido se carga con la vista v96.
+
+Refinamiento v97.1: la cancha vuelve a ser la foto original del motor (césped, líneas, áreas y arcos
+fotografiados, con su filtro de color original); se quitaron la textura generada y las líneas, arcos y banderines
+vectoriales. Los indicadores tácticos aparecen solo al seleccionar un jugador o preparar una acción, con un solo
+número por destino (remates: casillas habilitadas y probabilidad de gol); el detalle completo se ve al apuntar un
+destino. El HUD no usa degradés ni brillos y la guía «Cómo leer la cancha» queda plegada. El motor no cambia.
+
+Corrección v98 del motor (pase fallido que no sale de la casilla del pasador): con la precisión de v96, un pase
+que queda corto tantas casillas como su distancia terminaba en la casilla del propio pasador, que no puede recibir
+su pase fallido. La pelota quedaba suelta debajo del pasador, en una casilla ocupada: nadie podía entrar a
+recogerla ni disputarla, el rival no tenía forma de recuperarla y solo el equipo que falló la destrababa moviendo
+al pasador. Ahora, solo en ese caso, la pelota queda suelta en la casilla libre más cercana al pasador en el
+sentido del pase (nunca en el destino elegido ni en una casilla de gol) y cualquiera de los dos equipos puede
+recogerla con las reglas de siempre. La corrección es una capa separada de app.js (V98_ENGINE_FIXES y
+patchShortPassLooseBall) que se aplica igual al partido real y a la simulación con la que la CPU anticipa
+jugadas; no usa azar adicional ni cambia reglas, probabilidades, IA, cronómetro ni la carpeta baseline.
+Prueba de regresión: pruebas/regresion-pase-corto.html, abierta desde el mismo servidor que el juego (no como
+archivo local). Ejecuta el motor real con 34 comprobaciones para el equipo humano y la CPU en situaciones
+espejadas, con el almacenamiento aislado en memoria. La carpeta pruebas no es necesaria para publicar el juego.
+
+IA v98 · Fase 1 (simulación coherente): la CPU elige sus jugadas simulando secuencias con simulateOneAction, y esa
+simulación no coincidía con el motor real. En la búsqueda, desde la segunda candidata de cada nodo las acciones
+movían fichas que ya no estaban en el tablero (pelota con dueño fuera de su casilla, movimientos sin efecto); la
+disputa por atrás podía dejar la pelota suelta sobre el rival; en pases y remates la intercepción se calculaba sobre
+la trayectoria elegida en vez de la desviada, el remate desviado afuera dejaba mal el turno y el tiro libre no se
+limpiaba. Ahora la simulación replica movePlayer, duel y moveBall con las mismas tiradas y en el mismo orden (capa
+V98_SIM_COHERENCE de app.js). El partido real no cambia. Prueba: pruebas/regresion-simulacion-cpu.html.
+
+IA v98 · Fase 2a (riesgo según marcador y tiempo): en el último 40% del partido la CPU ajusta cómo valora las
+posiciones según el resultado, usando solo el marcador y el reloj. Perdiendo por uno o dos valora más un gol propio y
+su amenaza ofensiva; ganando por uno o dos prioriza no conceder y conservar la pelota. Con empate o con diferencias de
+tres o más goles no cambia nada. La capa V98_AI_PATCH de app.js también guarda el mapa de amenazas de cada posición
+para no recalcularlo (mismo resultado, menos cálculo).
+
+IA v98 · Fase 2b (remates por valor esperado y variedad): la CPU evaluaba cada remate con tres muestras fijas de azar,
+así que un remate del 55% podía valer como uno del 67% o del 33% según la suerte de esas semillas. Ahora pondera los
+resultados con gol y sin gol por la probabilidad de gol del motor, la misma que ve el jugador. Además, cuando varias
+jugadas valen casi lo mismo (menos de 4 puntos, menos del 1,5% del valor de un gol), elige entre ellas al azar en lugar
+de repetir siempre la misma; nunca elige una jugada claramente peor.
+
+IA v98 · Fase 2c (anticipación defensiva): en la búsqueda, el turno rival se modelaba con sus dos jugadas mejor
+puntuadas por la heurística general, y en uno de cada cuatro turnos rivales su jugada más peligrosa quedaba afuera
+(por ejemplo, una conducción con 37% de amenaza de gol frente a dos movimientos sin peligro). Ahora la respuesta rival
+más peligrosa (remate, pase para remate o conducción para remate) siempre se considera, sin agregar nodos. Las mejoras
+de la fase 2 se controlan con el objeto fuV98Ai de app.js; con enabled=false la CPU decide como antes. Prueba:
+pruebas/regresion-ia-cpu.html, que además compara la huella de 29 funciones de reglas con la de 901c62b.
+
+IA v98 · Fase 2d (valor esperado en pases y disputas): las tres semillas con las que la CPU prueba cada jugada empiezan
+siempre con las mismas tiradas (0,599 · 0,112 · 0,021), y la primera tirada decide la precisión de un pase o la falta
+de una disputa. Por eso un pase del 85% nunca se veía impreciso y una disputa de costado (30% de falta) se veía como
+falta dos de cada tres veces. Ahora el valor pondera "pase completado al receptor" con precisión × (1 − intercepción) y
+"falta" con la probabilidad del reglamento (30% costado, 60% atrás); si falta una clase en las muestras, se evalúa con
+una semilla cuya primera tirada cae en esa clase.
+
+IA v98 · Fase 2e (corrección medida en el banco): con la fase 2c la CPU concedía más remates en situaciones
+defensivas. La causa estaba en la anticipación: el mapa de amenazas de v96 incluye "conducir y rematar", que el mismo
+jugador no puede hacer en un turno, y al anticiparla la búsqueda dejaba de ver remates reales. Ahora solo se anticipan
+amenazas ejecutables en ese turno (remate del poseedor o pase a un compañero que todavía no jugó y conserva una acción
+para rematar), y solo reemplazan una respuesta que no sea a su vez una amenaza igual o mayor. Además, la variedad
+entre jugadas equivalentes se usa solo con la pelota; en defensa la CPU elige siempre la mejor jugada.
+
+IA v98 · Fase 3 (defensa de la CPU). Diagnóstico con pruebas/banco-defensa-cpu.html en modo diagnóstico (posiciones
+y semillas fijas; 72 casos y 290 decisiones defensivas de v98 original). La "amenaza inmediata" es la probabilidad de
+gol de la mejor secuencia que el rival puede jugar en su próximo turno. Como cada jugador actúa una sola vez por turno,
+solo hay tres: remate, pase y remate, o pase, pase y remate (quien se desmarca no puede además recibir y rematar en ese
+turno). Se calcula con las funciones del motor (precisión, intercepción, fuera de juego, desvíos, bloqueo y atajada del
+arquero). Al empezar el turno de la CPU esa amenaza era en promedio 22,0%; después de su turno quedaba en 7,8%, y una
+referencia que solo busca bajarla llegaba a 4,4%. Causas encontradas:
+ · Evaluación (por qué deja espacios): la búsqueda modelaba el turno rival con dos respuestas heurísticas y resolvía
+   cada pase y remate con una sola tirada por semilla. Con las mismas semillas, un remate del 35% y uno del 15% solían
+   dar el mismo resultado, así que coberturas con distinto peligro valían lo mismo. En el 18% de las decisiones eligió
+   una opción que dejaba 13 puntos más de amenaza (en promedio) que otra disponible.
+ · Selección: defendiendo, la raíz admitía solo dos movimientos elegidos por la heurística general; en el 24% de las
+   decisiones el movimiento que más cortaba la amenaza (presionar el primer casillero de una trayectoria, ocupar una
+   línea de pase o de remate, retroceder entre la pelota y el arco) no llegaba a compararse.
+ · Posición: algunas acciones subían la amenaza al menos 5 puntos (abandonar una línea cubierta): 26 en 288 tramos.
+ · Faltas cerca de la línea de fondo: la rama "falta" de una disputa de costado (30%) o por atrás (60%) se valoraba con
+   una única muestra del tiro libre posterior; si en esa muestra no había gol, una falta en el área parecía inofensiva.
+   Ejemplo reproducido: disputa por atrás en la línea de fondo, falta y tiro libre con 10,8% de gol.
+El posicionamiento base (anclas de la formación) no era la causa principal: el problema estaba en evaluar y elegir.
+
+Cambios (capa V98_DEF_PATCH de app.js, interruptores en el objeto fuV98Def; con enabled=false la CPU decide como v98
+original y las decisiones con la pelota propia o suelta no cambian):
+ · 3a · Defendiendo, cuando el turno de la CPU termina con la pelota en poder del rival, esa posición se valora con el
+   valor esperado de la mejor secuencia del rival por el valor de un gol (320), sin sortear ese turno. Una falta cerca
+   del área cuesta lo que vale el tiro libre que concede.
+ · 3b · La raíz agrega hasta tres movimientos legales de jugadores distintos que bajan la amenaza al menos 2 puntos;
+   la búsqueda decide entre ellos y las candidatas de siempre.
+ · 3c · Corrección medida en el banco: recuperar la pelota quedaba subvalorado porque esas líneas se valoraban después
+   de la respuesta rival. Ahora todas las jugadas defensivas se comparan al terminar el turno de la CPU.
+ · 3d · Presión con quite limpio: si un defensor queda listo para un quite de frente sin riesgo de falta, la posición
+   suma 12 puntos (desempate entre coberturas parecidas).
+Las decisiones defensivas tardan menos: 1,4 s por decisión en lugar de 2,4 s en el banco.
+
+Pruebas. Banco (pruebas/banco-defensa-cpu.html): 24 posiciones iniciales con el rival con la pelota, tres rivales que
+solo usan acciones legales del motor (conservador, directo y agresivo con pases de riesgo), lado normal y espejado,
+dos semillas y tramos de seis turnos: 288 tramos emparejados por versión. v98 original → versión final, con
+intervalos de confianza del 90% por diferencias emparejadas:
+ · Amenaza inmediata media al empezar el turno rival: 9,4% → 6,7% (significativo).
+ · Ocasiones peligrosas concedidas (turnos rivales que empiezan con amenaza ≥ 20%): 90 → 67 (significativo).
+ · Remates rivales: 56 → 44 · remates con 15% o más de gol: 38 → 29 · xG rival: 13,2 → 10,4 (los tres significativos).
+ · Goles recibidos: 11 → 10 (demasiado pocos para concluir nada).
+ · Pérdidas de posición (acción que sube la amenaza ≥ 5 puntos): 26 → 13 (significativo).
+ · Faltas de la CPU en sus últimas seis columnas: 25 → 18; xG de los tiros libres concedidos: 5,8 → 4,3 (no
+   concluyentes).
+ · Intercepciones: 21 de 37 pases interceptables → 18 de 31 (57% → 58%, sin cambio).
+ · Ataque de la CPU: en 72 tramos que empiezan con la CPU con la pelota, igual que antes (6 goles, 15 remates, xG
+   10,4, 37 pérdidas); el rival remata menos tras recuperar (9 → 5).
+ · Regresión documentada y corregida solo en parte: recuperaciones de la CPU 214 → 184. Parte de la diferencia son
+   remates rivales que ya no ocurren (atajadas y saques de arco: 32 → 21). El resto son quites de frente limpios
+   (37 → 25) y pelotas sueltas recogidas (124 → 111). La CPU cierra líneas en lugar de quedar delante del poseedor:
+   cuando tiene un quite limpio lo usa más que antes, pero se le presenta la mitad de veces. Las correcciones 3c y 3d
+   no lo revierten del todo (con una presión de 25 puntos, igual). En los tramos defensivos la CPU empieza con la
+   pelota 174 turnos en lugar de 199.
+Prueba de regresión: pruebas/regresion-defensa-cpu.html (38 comprobaciones). La prueba de la fase 2 desactiva la fase
+3 para seguir midiendo la fase 2 por separado. Las cuatro pruebas pasan: 34/34, 27/27, 22/22 y 38/38.

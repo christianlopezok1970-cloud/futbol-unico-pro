@@ -274,6 +274,15 @@ button:focus-visible, a:focus-visible, select:focus-visible, input:focus-visible
   .fu-brand strong { font-size: 9px; }
   .fu-shell-nav button { padding-inline: 4px; font-size: 7px; }
 }
+/* Celular en horizontal: cabecera más baja para que la cancha del partido gane altura. */
+@media (orientation: landscape) and (max-height: 500px) {
+  .fu-shell { grid-template-rows: 46px minmax(0, 1fr); }
+  .fu-shell-header { padding-block: 4px; gap: 12px; }
+  .fu-brand-mark { width: 32px; height: 32px; font-size: 11px; }
+  .fu-brand small { display: none; }
+  .fu-shell-nav { padding: 2px; }
+  .fu-shell-nav button { min-height: 32px; }
+}
 @media (prefers-reduced-motion: reduce) {
   .fu-game-frame, .fu-loading-pitch { animation: none; }
   .fu-shell-nav button { transition: none; }

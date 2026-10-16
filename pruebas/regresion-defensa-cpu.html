@@ -1,0 +1,470 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<!-- La página vive en /pruebas/ pero carga el juego desde la raíz, igual que index.html. -->
+<base href="../">
+<title>Fútbol Único · Prueba de regresión · defensa de la CPU (fase 3)</title>
+<style>
+  :root { color-scheme: dark; --ok:#c8ff2e; --bad:#ff5263; --mut:#93a0b4; --line:rgba(233,238,246,.12); }
+  body { margin:0; background:#06080c; color:#e9eef6; font:14px/1.45 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif; }
+  main { max-width:1100px; margin:0 auto; padding:24px 18px 60px; }
+  h1 { font-size:20px; margin:0 0 6px; letter-spacing:-.01em; }
+  p.lead { color:var(--mut); margin:0 0 18px; }
+  #summary { display:flex; gap:12px; flex-wrap:wrap; align-items:center; padding:12px 14px; border:1px solid var(--line); border-radius:6px; background:#0b0f16; margin-bottom:14px; }
+  #summary strong { font-size:16px; }
+  .pill { padding:3px 9px; border-radius:999px; font-weight:800; font-size:12px; letter-spacing:.06em; }
+  .pill.ok { background:rgba(200,255,46,.12); color:var(--ok); } .pill.bad { background:rgba(255,82,99,.14); color:var(--bad); } .pill.run { background:rgba(62,230,255,.1); color:#3ee6ff; }
+  table { width:100%; border-collapse:collapse; font-size:13px; }
+  th, td { text-align:left; padding:7px 8px; border-bottom:1px solid var(--line); vertical-align:top; }
+  th { color:var(--mut); font-size:11px; letter-spacing:.08em; text-transform:uppercase; }
+  td.res { font-weight:800; white-space:nowrap; } td.res.ok { color:var(--ok); } td.res.bad { color:var(--bad); }
+  td.det { color:var(--mut); font-family:ui-monospace,SFMono-Regular,Menlo,monospace; font-size:12px; }
+  tr.group td { color:#3ee6ff; font-weight:800; padding-top:16px; border-bottom-color:rgba(62,230,255,.25); }
+  .stage-wrap { margin-top:22px; border:1px solid var(--line); border-radius:6px; overflow:hidden; }
+  .stage-wrap > p { margin:0; padding:8px 12px; color:var(--mut); font-size:12px; border-bottom:1px solid var(--line); }
+  #fuGameStage { height:640px; position:relative; }
+  #fuGameStage iframe { width:100%; height:100%; border:0; display:block; }
+  .fu-shell-header, #fuLoading small { display:none; }
+</style>
+<script>
+  // Aislamiento del almacenamiento: la prueba no lee ni escribe los datos guardados del jugador.
+  function installMemoryStorage(win) {
+    var data = new Map();
+    var store = {
+      getItem: function (k) { k = String(k); return data.has(k) ? data.get(k) : null; },
+      setItem: function (k, v) { data.set(String(k), String(v)); },
+      removeItem: function (k) { data.delete(String(k)); },
+      clear: function () { data.clear(); },
+      key: function (i) { var keys = Array.from(data.keys()); return i >= 0 && i < keys.length ? keys[i] : null; },
+      get length() { return data.size; }
+    };
+    try { Object.defineProperty(win, 'localStorage', { configurable: true, enumerable: true, get: function () { return store; } }); win.__fuStorageIsolated = win.localStorage === store; }
+    catch (error) { win.__fuStorageIsolated = false; }
+  }
+  installMemoryStorage(window);
+  (function () {
+    var url = new URL(location.href);
+    if (url.searchParams.get('page') !== 'practice') { url.searchParams.set('page', 'practice'); history.replaceState(null, '', url.pathname + url.search); }
+  })();
+</script>
+<script src="app.js" defer></script>
+</head>
+<body>
+  <header class="fu-shell-header">
+    <button id="fuBrand" type="button">FU</button>
+    <span id="fuStatusDot"></span><strong id="fuStatusTitle"></strong><small id="fuStatusText"></small>
+  </header>
+  <main>
+    <h1>Prueba de regresión · defensa de la CPU (fase 3)</h1>
+    <p class="lead">Comprueba la mejora defensiva sobre el motor real: con la fase 3 desactivada la CPU decide exactamente
+      como en v98 original (decisiones registradas en posiciones reales); la amenaza inmediata del rival coincide con
+      un cálculo independiente hecho con las reglas del motor y respeta que cada jugador actúa una sola vez por turno; la
+      búsqueda, defendiendo, compara todas las jugadas al terminar el turno de la CPU (con esa amenaza si el rival conserva
+      la pelota); en las situaciones concretas del diagnóstico la CPU
+      deja menos peligro que antes, también ante una disputa riesgosa en la línea de fondo; los turnos completos son
+      legales y las funciones de reglas no cambiaron. El almacenamiento queda aislado en memoria.</p>
+    <section id="summary"><span class="pill run" id="state">EJECUTANDO</span><strong id="totals">Cargando el motor…</strong><span id="ver"></span></section>
+    <table>
+      <thead><tr><th>Prueba</th><th>Resultado</th><th>Detalle</th></tr></thead>
+      <tbody id="rows"></tbody>
+    </table>
+    <div class="stage-wrap">
+      <p>Partido real usado por la prueba (las posiciones cambian según cada escenario).</p>
+      <div id="fuGameStage" aria-busy="true">
+        <div id="fuLoading"><strong>Preparando</strong><small></small></div>
+        <div id="fuError" hidden><p id="fuErrorText"></p><button type="button" id="fuRetry">Reintentar</button></div>
+      </div>
+    </div>
+  </main>
+<script>
+// Huellas SHA-1 de las funciones de reglas en 901c62b (las mismas que verifica la prueba de la IA, fase 2).
+var RULE_HASHES={"moveBall":"4992437c87534e91129ce03848d4c5d56185ee36","duel":"df6831e1a1f73543c275cee2728d8be835db8f91","movePlayer":"2c6bcbc87e2c0f479d6732091d33a1e5ed6b0ca3","resolveAccuracy":"5ef35ddc4bd73c9460136670907622738d2fff04","prepareFreeKick":"7c879f9129eda495d62add4e296ec34eb9a24397","prepareRestart":"944039e0b752df160f11a07ae38fe62f31ac015a","restartForExit":"396fc54c22c267f1666bc425dd1f5e03468cd8c5","advanceMatchClock":"57b9bd1b0c1dabd14ca829be0aab99854c4c9ac1","fuV96KeeperSaveChance":"62fce2398bd8e433fddef65f05c0482755d132dc","goalkeeperBlocksShot":"2037b5cc1a2aeb2025df86a9ac3144266a9317bf","deflectionCell":"d9e2702f4de22fff117562a696a26d93ab178183","findLooseBallCell":"90e27c875d20f171b9fb5da9b5cc7d42e2819911","findDisplacementFrom":"5a49d60876140cf7ddb1bfc1130e13b6c5dc28e7","createQuickFoulMoves":"0426f9eca9bd241beea888307d8ff9ffa6dda501","isOffsideMove":"1e75ffbf5e97198ae35123edf0da417df79ba18e","pLegal":"cb6244f55980ca6344394bc2a8645d4c84e28375","bLegalFor":"37aaffef1d1fbf5070992d88da899dae0a3f6817","passBeyondOffsideLine":"dc78c66c24a0b2e8f1ac8949e3c79eaa55a75fcf","isOffsidePosition":"bd4b63e8ff83a48bd23766feb44e87c4ebe6b929","precisionChance":"43b82acc62f2643a9be4022ea413208cbc2a0ec5","trajectoryInterceptionRisk":"58ebc6a2ca7b21dd34f5a7ca165a00e185e55d9d","estimateShotProbability":"1113627b1798b0d76cb420bbd984191cf2c08674","showGoalCelebration":"08d10eaa9967aaff1c1e2836bb19dc0a223bb046","continueAfterGoal":"0c818869b197f011e8a77a7e39e88c8927e5628b","resetToKickoff":"9bc04ad76bdec5942a6242dfaa6dacdb8bcf136b","fuV98ShortPassRestCell":"fc62c5858122bdc56e3be0f71695497780402294","tacticalRandom":"774ea902349d26f823322d3a197c7b240b5b96f4","dispatchCpuAction":"3745032dcc27f26718aa94b03058dd36a91a8577","runCpuAction":"3b3ea0c6fc9fec12065a9ab84939254397fdf12b"};
+// Posiciones reales (primera decisión de la CPU tras el turno de un rival programado del banco de defensa) y la jugada
+// que elige v98 original (etiqueta v98-ia-experimental) en cada una, capturada con ?capturar=1 en las mismas condiciones.
+var EQUIV_CASES=[
+{"name":"escenario 3 · rival conservador","state":{"p":[[0,0,5],[1,4,0],[2,3,2],[3,1,5],[4,2,8],[5,8,6],[6,10,3],[7,5,10],[8,7,2],[9,7,3],[10,7,9],[11,17,5],[12,13,0],[13,12,3],[14,12,5],[15,13,7],[16,8,3],[17,5,9],[18,8,8],[19,6,3],[20,4,4],[21,3,8]],"ball":{"c":4,"r":0,"owner":1},"turn":2,"actionNo":1,"played":[],"lastPlayedId":null,"kickoff":false,"restartPassOnlyId":null,"freeKickRequiredId":null,"freeKickAwardedTeam":null,"score":[0,0],"clock":63},"origKey":"move|20|4|1||"},
+{"name":"escenario 4 · rival directo","state":{"p":[[0,1,5],[1,2,2],[2,2,4],[3,2,6],[4,2,8],[5,6,4],[6,8,5],[7,8,9],[8,14,2],[9,7,2],[10,10,8],[11,17,5],[12,15,2],[13,15,4],[14,15,5],[15,15,8],[16,12,6],[17,9,5],[18,12,9],[19,8,1],[20,8,2],[21,8,7]],"ball":{"c":8,"r":9,"owner":7},"turn":2,"actionNo":1,"played":[],"lastPlayedId":null,"kickoff":false,"restartPassOnlyId":null,"freeKickRequiredId":null,"freeKickAwardedTeam":null,"score":[0,0],"clock":63},"origKey":"move|21|9|8||"},
+{"name":"escenario 7 · rival directo","state":{"p":[[0,0,5],[1,3,5],[2,1,2],[3,2,6],[4,2,8],[5,7,4],[6,11,1],[7,7,7],[8,7,2],[9,6,2],[10,11,8],[11,17,6],[12,14,4],[13,16,4],[14,14,5],[15,13,9],[16,10,5],[17,7,3],[18,10,8],[19,2,1],[20,8,3],[21,8,8]],"ball":{"c":11,"r":1,"owner":6},"turn":2,"actionNo":1,"played":[],"lastPlayedId":null,"kickoff":false,"restartPassOnlyId":null,"freeKickRequiredId":null,"freeKickAwardedTeam":null,"score":[0,0],"clock":63},"origKey":"move|12|12|2||"},
+{"name":"escenario 11 · rival directo","state":{"p":[[0,0,5],[1,3,2],[2,3,4],[3,2,6],[4,3,8],[5,5,5],[6,7,6],[7,13,7],[8,9,3],[9,7,0],[10,10,8],[11,17,5],[12,15,2],[13,15,6],[14,13,6],[15,14,6],[16,10,5],[17,9,6],[18,10,7],[19,8,1],[20,11,3],[21,9,10]],"ball":{"c":13,"r":7,"owner":7},"turn":2,"actionNo":1,"played":[],"lastPlayedId":null,"kickoff":false,"restartPassOnlyId":null,"freeKickRequiredId":null,"freeKickAwardedTeam":null,"score":[0,0],"clock":63},"origKey":"move|15|15|7||"},
+{"name":"escenario 12 · rival agresivo","state":{"p":[[0,0,5],[1,4,2],[2,3,4],[3,3,6],[4,4,9],[5,10,7],[6,11,9],[7,17,10],[8,9,2],[9,12,7],[10,12,10],[11,17,5],[12,16,5],[13,13,7],[14,15,8],[15,15,10],[16,10,4],[17,6,8],[18,13,8],[19,7,0],[20,8,4],[21,8,9]],"ball":{"c":11,"r":9,"owner":6},"turn":2,"actionNo":1,"played":[],"lastPlayedId":null,"kickoff":false,"restartPassOnlyId":null,"freeKickRequiredId":null,"freeKickAwardedTeam":null,"score":[0,0],"clock":63},"origKey":"move|18|12|9||"},
+{"name":"escenario 19 · rival directo","state":{"p":[[0,0,5],[1,4,2],[2,3,4],[3,3,6],[4,4,9],[5,12,7],[6,11,10],[7,17,7],[8,13,2],[9,16,3],[10,14,10],[11,17,5],[12,15,5],[13,14,6],[14,15,8],[15,15,10],[16,10,4],[17,6,8],[18,13,8],[19,7,0],[20,8,4],[21,10,9]],"ball":{"c":16,"r":3,"owner":9},"turn":2,"actionNo":1,"played":[],"lastPlayedId":null,"kickoff":false,"restartPassOnlyId":null,"freeKickRequiredId":null,"freeKickAwardedTeam":null,"score":[0,0],"clock":63},"origKey":"move|13|16|6||"},
+{"name":"escenario 20 · rival conservador","state":{"p":[[0,0,4],[1,3,0],[2,3,5],[3,2,7],[4,3,7],[5,6,7],[6,12,5],[7,17,9],[8,7,0],[9,14,2],[10,6,9],[11,17,6],[12,16,7],[13,14,4],[14,16,9],[15,15,9],[16,8,6],[17,5,5],[18,5,9],[19,5,2],[20,10,5],[21,8,9]],"ball":{"c":17,"r":9,"owner":7},"turn":2,"actionNo":1,"played":[],"lastPlayedId":null,"kickoff":false,"restartPassOnlyId":null,"freeKickRequiredId":null,"freeKickAwardedTeam":null,"score":[0,0],"clock":63},"origKey":"duel|14|17|9|7|atras"},
+{"name":"escenario 24 · rival agresivo","state":{"p":[[0,1,6],[1,2,2],[2,3,5],[3,3,6],[4,4,9],[5,6,5],[6,11,6],[7,17,10],[8,9,2],[9,15,6],[10,13,10],[11,17,5],[12,16,4],[13,17,7],[14,15,8],[15,17,9],[16,10,3],[17,6,8],[18,13,7],[19,7,0],[20,10,2],[21,9,8]],"ball":{"c":17,"r":10,"owner":7},"turn":2,"actionNo":1,"played":[],"lastPlayedId":null,"kickoff":false,"restartPassOnlyId":null,"freeKickRequiredId":null,"freeKickAwardedTeam":null,"score":[0,0],"clock":63},"origKey":"move|12|16|5||"}
+];
+// Posiciones con la CPU con la pelota y por mover (posiciones 25–36 del banco). La fase 3 no cambia las decisiones de
+// ataque: jugada de v98 original capturada con ?capturar=1, con los mismos dados (la variedad entre jugadas equivalentes
+// usa el azar del partido).
+var ATTACK_CASES=[
+{"name":"posición 25 (CPU con la pelota, propia-centro)","state":{"p":[[0,0,5],[1,2,2],[2,2,4],[3,2,6],[4,2,8],[5,6,5],[6,9,6],[7,5,9],[8,8,2],[9,8,1],[10,10,8],[11,17,5],[12,15,2],[13,15,4],[14,14,6],[15,15,8],[16,12,5],[17,9,5],[18,12,10],[19,9,2],[20,12,1],[21,9,10]],"ball":{"c":14,"r":6,"owner":14},"turn":2,"actionNo":1,"played":[],"lastPlayedId":null,"kickoff":false,"restartPassOnlyId":null,"freeKickRequiredId":null,"freeKickAwardedTeam":null,"score":[0,0],"clock":60},"origKey":"pass|14|12|5||"},
+{"name":"posición 26 (CPU con la pelota, propia-centro)","state":{"p":[[0,1,2],[1,2,4],[2,2,3],[3,1,3],[4,3,6],[5,4,1],[6,12,5],[7,6,9],[8,10,2],[9,13,1],[10,9,6],[11,17,5],[12,13,4],[13,14,0],[14,14,9],[15,11,6],[16,8,6],[17,4,5],[18,0,6],[19,5,2],[20,2,0],[21,4,7]],"ball":{"c":11,"r":6,"owner":15},"turn":2,"actionNo":1,"played":[],"lastPlayedId":null,"kickoff":false,"restartPassOnlyId":null,"freeKickRequiredId":null,"freeKickAwardedTeam":null,"score":[0,0],"clock":60},"origKey":"carry|15|11|8||"},
+{"name":"posición 27 (CPU con la pelota, propia-banda)","state":{"p":[[0,0,5],[1,2,2],[2,3,4],[3,2,6],[4,2,8],[5,6,4],[6,8,5],[7,5,9],[8,9,1],[9,5,1],[10,8,8],[11,17,5],[12,13,0],[13,17,4],[14,15,6],[15,15,8],[16,12,5],[17,9,5],[18,12,9],[19,9,2],[20,12,1],[21,9,8]],"ball":{"c":13,"r":0,"owner":12},"turn":2,"actionNo":1,"played":[],"lastPlayedId":null,"kickoff":false,"restartPassOnlyId":null,"freeKickRequiredId":null,"freeKickAwardedTeam":null,"score":[0,0],"clock":60},"origKey":"move|13|15|4||"},
+{"name":"posición 28 (CPU con la pelota, propia-banda)","state":{"p":[[0,1,2],[1,2,6],[2,2,5],[3,1,3],[4,3,6],[5,4,1],[6,12,5],[7,6,9],[8,10,2],[9,13,1],[10,10,7],[11,17,5],[12,13,4],[13,14,0],[14,14,9],[15,11,8],[16,8,6],[17,4,5],[18,0,9],[19,5,2],[20,2,0],[21,4,9]],"ball":{"c":11,"r":8,"owner":15},"turn":2,"actionNo":1,"played":[],"lastPlayedId":null,"kickoff":false,"restartPassOnlyId":null,"freeKickRequiredId":null,"freeKickAwardedTeam":null,"score":[0,0],"clock":60},"origKey":"pass|15|4|5||"},
+{"name":"posición 29 (CPU con la pelota, medio-centro)","state":{"p":[[0,0,5],[1,2,2],[2,2,5],[3,2,6],[4,2,8],[5,6,4],[6,7,5],[7,5,9],[8,8,2],[9,5,1],[10,8,9],[11,17,5],[12,15,2],[13,15,4],[14,15,6],[15,15,8],[16,11,5],[17,8,5],[18,12,9],[19,9,0],[20,12,1],[21,9,8]],"ball":{"c":8,"r":5,"owner":17},"turn":2,"actionNo":1,"played":[],"lastPlayedId":null,"kickoff":false,"restartPassOnlyId":null,"freeKickRequiredId":null,"freeKickAwardedTeam":null,"score":[0,0],"clock":60},"origKey":"carry|17|8|4||"},
+{"name":"posición 30 (CPU con la pelota, medio-centro)","state":{"p":[[0,1,5],[1,1,1],[2,2,0],[3,1,3],[4,2,7],[5,8,5],[6,8,4],[7,6,6],[8,6,3],[9,6,1],[10,10,7],[11,17,5],[12,12,2],[13,12,4],[14,14,5],[15,13,8],[16,3,4],[17,4,7],[18,7,0],[19,3,0],[20,9,4],[21,7,8]],"ball":{"c":9,"r":4,"owner":20},"turn":2,"actionNo":1,"played":[],"lastPlayedId":null,"kickoff":false,"restartPassOnlyId":null,"freeKickRequiredId":null,"freeKickAwardedTeam":null,"score":[0,0],"clock":60},"origKey":"pass|20|7|8||"},
+{"name":"posición 31 (CPU con la pelota, medio-banda)","state":{"p":[[0,0,5],[1,2,2],[2,2,4],[3,2,6],[4,2,8],[5,7,5],[6,9,6],[7,6,9],[8,8,2],[9,7,1],[10,7,9],[11,17,5],[12,15,2],[13,15,4],[14,15,6],[15,15,8],[16,11,5],[17,9,5],[18,12,9],[19,9,0],[20,10,2],[21,7,10]],"ball":{"c":7,"r":10,"owner":21},"turn":2,"actionNo":1,"played":[],"lastPlayedId":null,"kickoff":false,"restartPassOnlyId":null,"freeKickRequiredId":null,"freeKickAwardedTeam":null,"score":[0,0],"clock":60},"origKey":"carry|21|5|10||"},
+{"name":"posición 32 (CPU con la pelota, medio-banda)","state":{"p":[[0,0,5],[1,3,3],[2,1,5],[3,2,6],[4,4,9],[5,6,6],[6,8,5],[7,9,10],[8,6,2],[9,7,1],[10,7,9],[11,17,5],[12,12,2],[13,14,4],[14,14,7],[15,13,7],[16,9,4],[17,4,4],[18,7,8],[19,2,5],[20,7,2],[21,7,10]],"ball":{"c":7,"r":10,"owner":21},"turn":2,"actionNo":1,"played":[],"lastPlayedId":null,"kickoff":false,"restartPassOnlyId":21,"freeKickRequiredId":null,"freeKickAwardedTeam":null,"score":[0,0],"clock":60},"origKey":"pass|21|2|5||"},
+{"name":"posición 33 (CPU con la pelota, ataque-centro)","state":{"p":[[0,0,5],[1,2,4],[2,4,4],[3,4,5],[4,2,8],[5,5,6],[6,8,5],[7,5,9],[8,8,2],[9,5,1],[10,9,9],[11,17,5],[12,14,0],[13,15,4],[14,15,6],[15,15,8],[16,11,6],[17,5,4],[18,11,9],[19,9,2],[20,9,0],[21,7,9]],"ball":{"c":5,"r":4,"owner":17},"turn":2,"actionNo":1,"played":[],"lastPlayedId":null,"kickoff":false,"restartPassOnlyId":null,"freeKickRequiredId":null,"freeKickAwardedTeam":null,"score":[0,0],"clock":60},"origKey":"carry|17|5|3||"},
+{"name":"posición 34 (CPU con la pelota, ataque-centro)","state":{"p":[[0,0,4],[1,1,4],[2,2,1],[3,0,10],[4,1,5],[5,5,5],[6,14,2],[7,5,9],[8,13,0],[9,6,2],[10,7,9],[11,17,5],[12,14,0],[13,14,5],[14,13,5],[15,13,10],[16,0,0],[17,5,10],[18,0,5],[19,0,1],[20,4,5],[21,1,8]],"ball":{"c":4,"r":5,"owner":20},"turn":2,"actionNo":1,"played":[],"lastPlayedId":null,"kickoff":false,"restartPassOnlyId":null,"freeKickRequiredId":null,"freeKickAwardedTeam":null,"score":[0,0],"clock":60},"origKey":"pass|20|1|8||"},
+{"name":"posición 35 (CPU con la pelota, ataque-banda)","state":{"p":[[0,0,5],[1,2,2],[2,1,5],[3,1,6],[4,2,8],[5,7,5],[6,9,6],[7,4,9],[8,8,2],[9,7,1],[10,7,9],[11,17,5],[12,15,2],[13,15,4],[14,15,6],[15,13,10],[16,11,5],[17,9,5],[18,10,9],[19,9,0],[20,10,2],[21,5,10]],"ball":{"c":5,"r":10,"owner":21},"turn":2,"actionNo":1,"played":[],"lastPlayedId":null,"kickoff":false,"restartPassOnlyId":null,"freeKickRequiredId":null,"freeKickAwardedTeam":null,"score":[0,0],"clock":60},"origKey":"carry|21|3|10||"},
+{"name":"posición 36 (CPU con la pelota, ataque-banda)","state":{"p":[[0,0,1],[1,2,1],[2,1,4],[3,0,4],[4,2,5],[5,4,1],[6,13,4],[7,6,9],[8,10,2],[9,13,1],[10,9,8],[11,17,5],[12,15,2],[13,14,0],[14,14,9],[15,14,6],[16,9,5],[17,4,4],[18,0,5],[19,5,0],[20,2,0],[21,4,8]],"ball":{"c":2,"r":0,"owner":20},"turn":2,"actionNo":1,"played":[],"lastPlayedId":null,"kickoff":false,"restartPassOnlyId":null,"freeKickRequiredId":null,"freeKickAwardedTeam":null,"score":[0,0],"clock":60},"origKey":"pass|20|4|4||"}
+];
+// Situaciones del diagnóstico: jugadas de v98 original en su turno completo (origSeq, capturadas con ?capturar=1 sobre la
+// etiqueta v98-ia-experimental, con los mismos dados) y amenaza inmediata que dejaba al rival al terminar ese turno
+// (origEnd, probabilidad de gol de su mejor secuencia).
+var DIAG_CASES=[
+{"name":"Escenario 20 · rival conservador: amenaza inicial 29.5% · disputa por atrás en la línea de fondo","kind":"falta","state":{"p":[[0,0,4],[1,3,0],[2,3,5],[3,2,7],[4,3,7],[5,6,7],[6,12,5],[7,17,9],[8,7,0],[9,14,2],[10,6,9],[11,17,6],[12,16,7],[13,14,4],[14,16,9],[15,15,9],[16,8,6],[17,5,5],[18,5,9],[19,5,2],[20,10,5],[21,8,9]],"ball":{"c":17,"r":9,"owner":7},"turn":2,"actionNo":1,"played":[],"lastPlayedId":null,"kickoff":false,"restartPassOnlyId":null,"freeKickRequiredId":null,"freeKickAwardedTeam":null,"score":[0,0],"clock":63},"origKey":"duel|14|17|9|7|atras","origSeq":["duel|14|17|9|7|atras"],"origEnd":0.107769,"start":0.29457},
+{"name":"Escenario 7 · rival directo: amenaza inicial 14.2% · v98 original terminaba el turno con más peligro que al empezar","kind":"abre","state":{"p":[[0,0,5],[1,3,5],[2,1,2],[3,2,6],[4,2,8],[5,7,4],[6,11,1],[7,7,7],[8,7,2],[9,6,2],[10,11,8],[11,17,6],[12,14,4],[13,16,4],[14,14,5],[15,13,9],[16,10,5],[17,7,3],[18,10,8],[19,2,1],[20,8,3],[21,8,8]],"ball":{"c":11,"r":1,"owner":6},"turn":2,"actionNo":1,"played":[],"lastPlayedId":null,"kickoff":false,"restartPassOnlyId":null,"freeKickRequiredId":null,"freeKickAwardedTeam":null,"score":[0,0],"clock":63},"origKey":"move|12|12|2||","origSeq":["move|12|12|2||","move|20|10|1||","move|14|15|4||"],"origEnd":0.193636,"start":0.141547},
+{"name":"Escenario 8 · rival conservador: amenaza inicial 32.8%","kind":"","state":{"p":[[0,0,4],[1,2,4],[2,2,1],[3,0,10],[4,3,5],[5,5,5],[6,14,2],[7,5,8],[8,13,0],[9,10,2],[10,7,9],[11,17,5],[12,14,0],[13,15,4],[14,13,5],[15,14,8],[16,0,0],[17,5,10],[18,0,5],[19,2,3],[20,6,3],[21,1,8]],"ball":{"c":10,"r":2,"owner":9},"turn":2,"actionNo":1,"played":[],"lastPlayedId":null,"kickoff":false,"restartPassOnlyId":null,"freeKickRequiredId":null,"freeKickAwardedTeam":null,"score":[0,0],"clock":63},"origKey":"move|20|9|3||","origSeq":["move|20|9|3||","move|19|4|3||","move|13|15|3||"],"origEnd":0.290219,"start":0.327865},
+{"name":"Escenario 21 · rival conservador: amenaza inicial 35.4%","kind":"","state":{"p":[[0,0,4],[1,3,2],[2,3,5],[3,2,7],[4,3,7],[5,6,7],[6,11,6],[7,16,10],[8,6,0],[9,14,2],[10,6,9],[11,17,5],[12,16,7],[13,14,4],[14,14,9],[15,13,9],[16,8,6],[17,5,5],[18,5,9],[19,5,2],[20,10,5],[21,8,9]],"ball":{"c":16,"r":10,"owner":7},"turn":2,"actionNo":1,"played":[],"lastPlayedId":null,"kickoff":false,"restartPassOnlyId":null,"freeKickRequiredId":null,"freeKickAwardedTeam":null,"score":[0,0],"clock":63},"origKey":"move|14|16|9||","origSeq":["move|14|16|9||","move|20|12|6||","move|12|17|9||"],"origEnd":0.196719,"start":0.353925},
+{"name":"Escenario 24 · rival conservador: amenaza inicial 35.5%","kind":"","state":{"p":[[0,0,5],[1,2,2],[2,3,5],[3,3,6],[4,4,9],[5,7,5],[6,9,6],[7,17,10],[8,9,2],[9,15,5],[10,12,10],[11,17,5],[12,16,4],[13,17,7],[14,15,8],[15,17,9],[16,10,3],[17,6,8],[18,13,7],[19,7,0],[20,10,2],[21,9,8]],"ball":{"c":12,"r":10,"owner":10},"turn":2,"actionNo":1,"played":[],"lastPlayedId":null,"kickoff":false,"restartPassOnlyId":null,"freeKickRequiredId":null,"freeKickAwardedTeam":null,"score":[0,0],"clock":63},"origKey":"move|18|13|9||","origSeq":["move|18|13|9||","move|12|16|6||","move|20|13|2||"],"origEnd":0.204448,"start":0.354945},
+{"name":"Escenario 22 · rival agresivo: amenaza inicial 18.0%","kind":"","state":{"p":[[0,0,5],[1,6,1],[2,3,4],[3,2,6],[4,2,8],[5,7,0],[6,11,2],[7,7,9],[8,15,1],[9,9,1],[10,8,9],[11,17,5],[12,14,2],[13,16,3],[14,14,6],[15,15,8],[16,10,4],[17,6,5],[18,11,8],[19,8,1],[20,5,0],[21,6,8]],"ball":{"c":15,"r":1,"owner":8},"turn":2,"actionNo":1,"played":[],"lastPlayedId":null,"kickoff":false,"restartPassOnlyId":null,"freeKickRequiredId":null,"freeKickAwardedTeam":null,"score":[0,0],"clock":63},"origKey":"move|13|16|2||","origSeq":["move|13|16|2||","move|14|15|5||","move|12|15|2||"],"origEnd":0.179939,"start":0.179939},
+{"name":"Escenario 16 · rival agresivo: amenaza inicial 60.7%","kind":"","state":{"p":[[0,0,5],[1,5,5],[2,3,2],[3,2,6],[4,2,9],[5,11,1],[6,11,2],[7,10,7],[8,8,2],[9,8,1],[10,13,7],[11,17,6],[12,14,1],[13,14,4],[14,14,5],[15,15,7],[16,12,2],[17,7,3],[18,6,8],[19,2,1],[20,12,3],[21,8,8]],"ball":{"c":13,"r":7,"owner":10},"turn":2,"actionNo":1,"played":[],"lastPlayedId":null,"kickoff":false,"restartPassOnlyId":null,"freeKickRequiredId":null,"freeKickAwardedTeam":null,"score":[0,0],"clock":63},"origKey":"move|14|15|6||","origSeq":["move|14|15|6||","move|13|15|5||","move|12|16|3||"],"origEnd":0.151815,"start":0.607261}
+];
+(function () {
+  'use strict';
+  function engineHook() {
+    // Dados del partido con semilla fija por caso (reproducibles entre versiones); sin semilla usa el azar normal.
+    var nativeRandom = Math.random, randomCalls = 0, seedState = null;
+    Math.random = function () { randomCalls++; if (seedState === null) return nativeRandom(); seedState = xs(seedState); return seedState / 4294967296; };
+    function invariant() {
+      if (ball.owner !== null) { var o = p.find(function (z) { return z.id === ball.owner; }); return !!o && o.c === ball.c && o.r === ball.r; }
+      return !p.some(function (z) { return z.c === ball.c && z.r === ball.r; });
+    }
+    function loadState(st) {
+      cancelCpuTimer(); cpuEpoch++; cpuAutoEnabled = false;
+      p = FORMATION.map(function (d, i) { return { id: i, t: d[0], n: d[1], c: d[2], r: d[3] }; });
+      st.p.forEach(function (q) { var z = p.find(function (y) { return y.id === q[0]; }); z.c = q[1]; z.r = q[2]; });
+      ball = { c: st.ball.c, r: st.ball.r, owner: st.ball.owner }; turn = st.turn; actionNo = st.actionNo;
+      playedThisTurn = (st.played || []).slice(); lastPlayedId = st.lastPlayedId == null ? null : st.lastPlayedId;
+      kickoffPassRequired = !!st.kickoff; restartPassOnlyId = st.restartPassOnlyId == null ? null : st.restartPassOnlyId;
+      freeKickRequiredId = st.freeKickRequiredId == null ? null : st.freeKickRequiredId; freeKickAwardedTeam = st.freeKickAwardedTeam == null ? null : st.freeKickAwardedTeam;
+      score = (st.score || [0, 0]).slice(); matchClockActions = st.clock || 60; matchClockFinished = false; halftimePending = false; halftimePaused = false;
+      goalCelebrationActive = false; strategicPassHistory = []; selected = null; mode = 'player'; anim = false; simulationRandomState = null;
+      cpuRejectedKeys.clear(); cpuProfile = 'balanced'; cpuDefensiveMemory = { schema: 1, patterns: [] };
+      if (typeof fuV96ActionHistory !== 'undefined') fuV96ActionHistory = [];
+      if (typeof fuV96TransitionActions !== 'undefined') fuV96TransitionActions = 0;
+      try { clearRecommendation(); } catch (e) {}
+      drawPlayers(); drawBall(); setTurn(); refresh();
+    }
+    function fullState() {
+      return { p: p.map(function (z) { return [z.id, z.c, z.r]; }), ball: { c: ball.c, r: ball.r, owner: ball.owner }, turn: turn, actionNo: actionNo,
+        played: playedThisTurn.slice(), lastPlayedId: lastPlayedId, kickoff: kickoffPassRequired, restartPassOnlyId: restartPassOnlyId,
+        freeKickRequiredId: freeKickRequiredId, freeKickAwardedTeam: freeKickAwardedTeam, score: score.slice() };
+    }
+    async function decide() {
+      cpuAutoEnabled = true; cancelCpuTimer(); var c = null, t0 = performance.now();
+      try { c = await chooseCpuMove(cpuEpoch); } finally { cpuSearching = false; cpuAutoEnabled = false; }
+      return { key: c ? sequenceActionKey(c) : null, ms: performance.now() - t0 };
+    }
+    // Semilla cuya primera tirada es ≥ 0,6: la disputa simulada no termina en falta.
+    function xs(s) { s ^= s << 13; s >>>= 0; s ^= s >>> 17; s ^= s << 5; return s >>> 0; }
+    var NO_FOUL_SEED = (function () { for (var sd = 1; sd < 100000; sd++) if (xs(sd) / 4294967296 >= 0.6) return sd; return 1; })();
+    function rivalOf() { var h = owner(); return h ? h.t : HUMAN_TEAM; }
+    // Amenaza que queda para el rival si la CPU ejecuta la jugada (valor esperado entre falta y no falta en disputas).
+    function threatAfter(key) {
+      var a = tacticalCandidates().find(function (x) { return sequenceActionKey(x) === key; });
+      if (!a) return null;
+      var team = rivalOf();
+      if (a.kind === 'duel') {
+        var x = p.find(function (z) { return z.id === a.playerId; }), r = p.find(function (z) { return z.id === a.opponentId; });
+        var dc = r.c - x.c, dr = r.r - x.r, tipo = (Math.abs(dc) === 1 && Math.abs(dr) === 1) ? 'costado' : duelType(x, r);
+        var pFoul = tipo === 'atras' ? 0.6 : tipo === 'costado' ? 0.3 : 0, tFoul = 0, tNo;
+        var snap0 = captureSequenceState();
+        if (pFoul > 0) {
+          try {
+            var spot = { c: r.c, r: r.r }, quick = createQuickFoulMoves(r.t, r, spot, x);
+            p.forEach(function (z) { var q = quick.layout.get(z.id); if (q) { z.c = q.c; z.r = q.r; } });
+            var rv = p.find(function (z) { return z.id === r.id; }); rv.c = spot.c; rv.r = spot.r;
+            ball = { c: spot.c, r: spot.r, owner: rv.id }; turn = rv.t; actionNo = 1; lastPlayedId = null; playedThisTurn = [];
+            freeKickRequiredId = rv.id; freeKickAwardedTeam = rv.t;
+            tFoul = fuV98DefThreat(rv.t).p;
+          } finally { restoreSequenceState(snap0); }
+        }
+        var snap1 = captureSequenceState(); simulationRandomState = NO_FOUL_SEED;
+        try { var res1 = simulateOneAction(a, [0, 0]); tNo = res1 === 'blocked' ? null : fuV98DefThreat(team).p; } finally { restoreSequenceState(snap1); }
+        if (tNo === null) return null;
+        return { t: pFoul * tFoul + (1 - pFoul) * tNo, pFoul: pFoul, tFoul: tFoul, tNo: tNo, kind: 'duel' };
+      }
+      var snap = captureSequenceState(); simulationRandomState = 0x2F6E2B1;
+      try { var res = simulateOneAction(a, [0, 0]); return res === 'blocked' ? null : { t: fuV98DefThreat(team).p, kind: a.kind }; }
+      finally { restoreSequenceState(snap); }
+    }
+    // Cálculo independiente de la amenaza: con la pelota en el pasador, usa isOffsidePosition() y passBeyondOffsideLine()
+    // del propio motor para la legalidad de cada pase, y fuV96BestShot() para cada remate.
+    function bruteThreat() {
+      var holder = owner(); if (!holder) return { p: 0 };
+      var team = holder.t, save = { c: ball.c, r: ball.r, owner: ball.owner }, best = 0, type = '';
+      function passProb(passer, to, receiver) {
+        var from = { c: passer.c, r: passer.r };
+        if (cheb(from, to) > BALL_REACH(passer.n)) return 0;
+        var it = trajectoryInterceptionRisk(from, to, team, p); if (it.blocked) return 0;
+        ball = { c: passer.c, r: passer.r, owner: passer.id };
+        try { if (isOffsidePosition(receiver) || passBeyondOffsideLine(to.c, passer)) return 0; }
+        finally { ball = { c: save.c, r: save.r, owner: save.owner }; }
+        return estimatedPassPrecision(passer, from, to) * (1 - it.risk);
+      }
+      if (restartPassOnlyId !== holder.id && !kickoffPassRequired) { var d = fuV96BestShot(holder, p, { c: holder.c, r: holder.r }).probability; if (d > best) { best = d; type = 'remate'; } }
+      var mates = p.filter(function (z) { return z.t === team && z.id !== holder.id && z.n !== 1; });
+      mates.forEach(function (r1) {
+        var s1 = passProb(holder, { c: r1.c, r: r1.r }, r1); if (s1 <= 0) return;
+        var v = s1 * fuV96BestShot(r1, p, { c: r1.c, r: r1.r }).probability; if (v > best) { best = v; type = 'pase-remate'; }
+        mates.forEach(function (r2) {
+          if (r2.id === r1.id) return;
+          var s2 = passProb(r1, { c: r2.c, r: r2.r }, r2); if (s2 <= 0) return;
+          var v2 = s1 * s2 * fuV96BestShot(r2, p, { c: r2.c, r: r2.r }).probability; if (v2 > best) { best = v2; type = 'pase-pase-remate'; }
+        });
+      });
+      return { p: best, type: type };
+    }
+    window.__fuTest = {
+      def: typeof fuV98Def !== 'undefined',
+      seed: function (n) { seedState = (n >>> 0) || 1; },
+      loadState: loadState, fullState: fullState, invariant: invariant, decide: decide, threatAfter: threatAfter,
+      id: function (t, n) { var z = p.find(function (y) { return y.t === t && y.n === n; }); return z ? z.id : null; },
+      fast: function () { animateBall = function () { return Promise.resolve(); }; animatePlayerMove = function () { return Promise.resolve(); }; animateDuel = function () { return Promise.resolve(); }; },
+      setDef: function (cfg) { Object.assign(fuV98Def, cfg); return JSON.parse(JSON.stringify(fuV98Def)); },
+      setAi: function (cfg) { Object.assign(fuV98Ai, cfg); return JSON.parse(JSON.stringify(fuV98Ai)); },
+      threat: function () { var h = owner(); var t = fuV98DefThreat(h ? h.t : 1); return { p: t.p, type: t.type, first: t.first }; },
+      brute: bruteThreat,
+      approx: function () { var h = owner(); return h ? estimateAttackingThreat(p, h.id).probability : 0; },
+      purity: function () { var before = JSON.stringify(fullState()), calls = randomCalls; var h = owner(); fuV98DefThreat(h ? h.t : 1); return { same: JSON.stringify(fullState()) === before, randomCalls: randomCalls - calls }; },
+      // Nodo de fin del turno de la CPU (rival por jugar, acción 1) dentro de una decisión defensiva o de ataque.
+      // Las partes de la fórmula se calculan antes de buscar; ambas búsquedas usan la misma semilla de simulación.
+      horizon: async function (defensive) {
+        var prev = fuV98DefRootDefensive; fuV98DefRootDefensive = !!defensive;
+        try {
+          var h = owner(), rival = h && h.t !== CPU_TEAM;
+          var out = { evaluate: evaluateSequencePosition(CPU_TEAM, [0, 0]), approx: rival ? estimateAttackingThreat(p, h.id).probability : 0,
+            full: rival ? fuV98DefThreat(h.t).p : 0, press: rival ? fuV98DefPressValue(h) : 0, holderTeam: h ? h.t : 0 };
+          var before = JSON.stringify(fullState());
+          simulationRandomState = 0x58A31;
+          out.value = (await searchSequenceNode(3, CPU_TEAM, [0, 0], -Infinity, Infinity, { nodes: 0, width: 2, status: { textContent: '' } })).value;
+          simulationRandomState = 0x58A31;
+          out.prevValue = (await fuV98DefPrevSearch(3, CPU_TEAM, [0, 0], -Infinity, Infinity, { nodes: 0, width: 2, status: { textContent: '' } })).value;
+          out.intact = JSON.stringify(fullState()) === before;
+          return out;
+        } finally { fuV98DefRootDefensive = prev; simulationRandomState = null; }
+      },
+      roots: function () { return { keys: cpuSearchCandidateKeys(), info: fuV98DefLastRoots ? JSON.parse(JSON.stringify(fuV98DefLastRoots)) : null }; },
+      // Ejecuta una acción real (como un clic) del equipo en turno y espera a que termine.
+      act: async function (key) {
+        var a = tacticalCandidates().find(function (x) { return sequenceActionKey(x) === key; });
+        if (!a) return false;
+        var actor = p.find(function (z) { return z.id === a.playerId; });
+        selected = actor.id; mode = (a.kind === 'pass' || a.kind === 'shoot') ? 'ball' : 'player';
+        if (a.kind === 'pass' || a.kind === 'shoot') moveBall(a.to.c, a.to.r); else movePlayer(a.to.c, a.to.r);
+        var w0 = Date.now(); while (anim && Date.now() - w0 < 20000) await new Promise(function (r) { setTimeout(r, 10); });
+        return true;
+      },
+      candidateKeys: function () { return tacticalCandidates().map(function (a) { return sequenceActionKey(a); }); },
+      cpuTurn: async function () {
+        var t0 = matchClockActions, blocked = 0, inv = true, startTurn = turn, keys = [], t0ms = performance.now();
+        maybeScheduleCpuAction = function () {};
+        for (var k = 0; k < 3 && turn === CPU_TEAM; k++) {
+          cpuAutoEnabled = true; var chosen = null;
+          try { chosen = await chooseCpuMove(cpuEpoch); } finally { cpuSearching = false; }
+          if (!chosen) chosen = tacticalCandidates().sort(function (a, b) { return b.score - a.score; })[0];
+          var chosenKey = sequenceActionKey(chosen);
+          var ok = dispatchCpuAction(chosen); cpuAutoEnabled = false; cpuEpoch++;
+          if (!ok) { blocked++; cpuRejectedKeys.add(chosenKey); k--; if (blocked > 8) break; continue; }
+          cpuRejectedKeys.clear(); keys.push(chosenKey);
+          var w0 = Date.now(); while ((anim && !goalCelebrationActive) && Date.now() - w0 < 20000) await new Promise(function (r) { setTimeout(r, 10); });
+          if (goalCelebrationActive) { continueAfterGoal(); await new Promise(function (r) { setTimeout(r, 20); }); }
+          inv = inv && invariant();
+        }
+        return { actions: matchClockActions - t0, blocked: blocked, invariant: inv, turn: turn, start: startTurn, keys: keys, ms: performance.now() - t0ms };
+      },
+      ruleHashes: async function (names) {
+        var res = {};
+        for (var i = 0; i < names.length; i++) {
+          var fn; try { fn = eval(names[i]); } catch (e) { res[names[i]] = 'no existe'; continue; }
+          var buf = await crypto.subtle.digest('SHA-1', new TextEncoder().encode(String(fn)));
+          res[names[i]] = Array.from(new Uint8Array(buf)).map(function (b) { return b.toString(16).padStart(2, '0'); }).join('');
+        }
+        return res;
+      }
+    };
+  }
+  var HOOK = ';(' + engineHook.toString() + ')();\n';
+  var MARKS = ['// ================== FIN FÚTBOL ÚNICO v97 ==================', '// ================== FIN FUTBOL UNICO v96 =================='];
+  var STORAGE = '<script>(' + installMemoryStorage.toString() + ')(window);<\/script>';
+  var stage = document.getElementById('fuGameStage');
+  var nativeAppend = stage.appendChild.bind(stage);
+  stage.appendChild = function (node) {
+    if (node && node.tagName === 'IFRAME' && node.srcdoc) {
+      var html = node.srcdoc, mark = MARKS.find(function (m) { return html.indexOf(m) >= 0; });
+      if (mark) html = html.replace(mark, HOOK + mark);
+      html = /<head[^>]*>/i.test(html) ? html.replace(/<head[^>]*>/i, function (tag) { return tag + STORAGE; }) : STORAGE + html;
+      node.srcdoc = html;
+    }
+    return nativeAppend(node);
+  };
+  var rows = document.getElementById('rows'), results = [];
+  function group(title) { var tr = document.createElement('tr'); tr.className = 'group'; tr.innerHTML = '<td colspan="3"></td>'; tr.firstChild.textContent = title; rows.appendChild(tr); }
+  function check(name, ok, detail) {
+    results.push({ name: name, ok: !!ok, detail: detail || '' });
+    var tr = document.createElement('tr');
+    tr.innerHTML = '<td></td><td class="res ' + (ok ? 'ok' : 'bad') + '">' + (ok ? 'CORRECTO' : 'FALLA') + '</td><td class="det"></td>';
+    tr.children[0].textContent = name; tr.children[2].textContent = detail || ''; rows.appendChild(tr);
+    window.__FU_PROGRESS = results.length + ' comprobaciones';
+  }
+  var sleep = function (ms) { return new Promise(function (r) { setTimeout(r, ms); }); };
+  var pct = function (x) { return x === null || x === undefined ? '–' : (100 * x).toFixed(1) + '%'; };
+  var F = null, ALL = { enabled: true, boundary: true, roots: true };
+
+
+  async function run() {
+    var iframe = null;
+    for (var i = 0; i < 400 && !(iframe && iframe.contentWindow && iframe.contentWindow.__fuTest && iframe.contentDocument.querySelector('rect.cell')); i++) { iframe = stage.querySelector('iframe'); await sleep(100); }
+    if (!iframe || !iframe.contentWindow.__fuTest) throw new Error('No se pudo cargar el motor del partido.');
+    if (window.__fuStorageIsolated !== true || iframe.contentWindow.__fuStorageIsolated !== true)
+      throw new Error('No se pudo aislar el almacenamiento del navegador; la prueba no se ejecutó para no modificar datos guardados.');
+    F = iframe.contentWindow.__fuTest;
+    document.getElementById('ver').textContent = 'Defensa fase 3 instalada: ' + (F.def ? 'sí' : 'no');
+    F.fast(); await sleep(300);
+    // ?capturar=1 sobre la versión v98-ia-experimental (sin fase 3): registra la jugada de v98 original en cada posición
+    // del grupo 1, en las mismas condiciones de esta prueba. Así se obtuvieron los valores origKey de EQUIV_CASES.
+    if (new URLSearchParams(location.search).get('capturar') === '1') {
+      var cap = [];
+      for (var ci = 0; ci < EQUIV_CASES.length; ci++) { F.loadState(EQUIV_CASES[ci].state); var dk = await F.decide(); cap.push({ name: EQUIV_CASES[ci].name, key: dk.key }); }
+      var capAttack = [];
+      for (var ca = 0; ca < ATTACK_CASES.length; ca++) { F.seed(2000 + ca); F.loadState(ATTACK_CASES[ca].state); var dka = await F.decide(); capAttack.push({ name: ATTACK_CASES[ca].name, key: dka.key }); }
+      // Turno completo de v98 original en cada situación del grupo 4, con los mismos dados, y la amenaza que deja
+      // (medida con el cálculo independiente, que solo usa funciones presentes en ambas versiones).
+      var capTurns = [];
+      for (var cj = 0; cj < DIAG_CASES.length; cj++) {
+        F.seed(1000 + cj); F.loadState(DIAG_CASES[cj].state);
+        var ctc = await F.cpuTurn(); capTurns.push({ name: DIAG_CASES[cj].name, seq: ctc.keys, end: F.brute().p, blocked: ctc.blocked });
+      }
+      window.__FU_REGRESSION_RESULT = { ok: true, passed: 0, failed: 0, capture: cap, attack: capAttack, turns: capTurns, results: [] };
+      document.getElementById('totals').textContent = 'Captura: ' + JSON.stringify(cap);
+      return;
+    }
+    if (!F.def) throw new Error('Esta versión de app.js no tiene la defensa de la fase 3.');
+    var base = F.fullState();
+    var t1 = function (n) { return F.id(1, n); }, t2 = function (n) { return F.id(2, n); };
+    function layout(changes, ownerId, turnTeam, extra) {
+      var st = JSON.parse(JSON.stringify(base));
+      changes.forEach(function (ch) { st.p.forEach(function (q) { if (q[0] === ch[0]) { q[1] = ch[1]; q[2] = ch[2]; } }); });
+      var o = st.p.find(function (q) { return q[0] === ownerId; });
+      st.ball = { c: o[1], r: o[2], owner: ownerId }; st.turn = turnTeam; st.actionNo = 1; st.played = []; st.lastPlayedId = null;
+      st.kickoff = false; st.restartPassOnlyId = null; st.freeKickRequiredId = null; st.freeKickAwardedTeam = null; st.score = [0, 0]; st.clock = 60;
+      return Object.assign(st, extra || {});
+    }
+
+    group('1. Con la fase 3 desactivada, la CPU decide exactamente como v98 original');
+    F.setDef({ enabled: false });
+    for (var e = 0; e < EQUIV_CASES.length; e++) {
+      var ec = EQUIV_CASES[e]; F.loadState(ec.state);
+      var d0 = await F.decide();
+      check('Posición real ' + ec.name + ': misma jugada que v98 original', d0.key === ec.origKey, 'v98 original ' + ec.origKey + ' · ahora ' + d0.key);
+    }
+    F.setDef(ALL);
+
+    group('1b. Con la pelota, la CPU con la fase 3 activada decide igual que v98 original');
+    for (var aI = 0; aI < ATTACK_CASES.length; aI++) {
+      var ac = ATTACK_CASES[aI]; F.seed(2000 + aI); F.loadState(ac.state);
+      var da = await F.decide();
+      check('Ataque, ' + ac.name + ': misma jugada que v98 original', da.key === ac.origKey, 'v98 original ' + ac.origKey + ' · ahora ' + da.key + ' · ' + Math.round(da.ms) + ' ms');
+    }
+
+    group('2. Amenaza inmediata del rival: solo secuencias posibles en un turno, con las probabilidades del motor');
+    var sameAll = true, coverAll = true, details = [];
+    var threatStates = EQUIV_CASES.map(function (x) { return x.state; }).concat(DIAG_CASES.map(function (x) { return x.state; }));
+    threatStates.forEach(function (st, idx) {
+      F.loadState(st); var th = F.threat(), br = F.brute(), ap = F.approx();
+      if (Math.abs(th.p - br.p) > 1e-9) sameAll = false;
+      if (th.p < ap - 1e-9) coverAll = false;
+      if (idx < 6) details.push(pct(th.p) + ' ' + th.type);
+    });
+    check('Coincide con un cálculo independiente que usa isOffsidePosition() y passBeyondOffsideLine() del motor (' + threatStates.length + ' posiciones reales)', sameAll, details.join(' · '));
+    check('Incluye siempre la amenaza aproximada que usaba la evaluación (remate o un pase-remate)', coverAll, 'amenaza completa ≥ aproximada en todas las posiciones');
+    // Pase, pase y remate: posiciones reales donde esa es la mejor secuencia y la evaluación anterior no la veía.
+    var ppFound = 0, ppDetail = [], ppOk = true;
+    threatStates.forEach(function (st) {
+      F.loadState(st); var pp = F.threat(), ppb = F.brute(), ppa = F.approx();
+      if (pp.type === 'pase-pase-remate' && pp.p > ppa + 1e-9) { ppFound++; ppOk = ppOk && Math.abs(pp.p - ppb.p) < 1e-9; if (ppDetail.length < 3) ppDetail.push(pct(pp.p) + ' (antes se veía ' + pct(ppa) + ')'); }
+    });
+    check('Detecta la secuencia pase, pase y remate que la evaluación anterior no veía', ppFound > 0 && ppOk, ppFound + ' posiciones reales: ' + ppDetail.join(' · '));
+    // Cada jugador actúa una vez por turno: quien se desmarca no puede además rematar (se verifica en el partido real).
+    var runState = layout([[t1(10), 12, 5], [t1(9), 12, 3], [t2(5), 10, 7], [t2(2), 14, 6], [t2(6), 15, 7], [t2(3), 16, 1], [t2(4), 16, 9]], t1(10), 1);
+    F.loadState(runState); var beforeRun = F.threat();
+    var runKey = 'move|' + t1(9) + '|14|3||', passKey = 'pass|' + t1(10) + '|14|3||';
+    var moved = await F.act(runKey), passed = moved && await F.act(passKey);
+    var keys = F.candidateKeys(), canShoot = keys.some(function (k) { return k.indexOf('shoot|' + t1(9) + '|') === 0; });
+    check('Regla del motor: el jugador que se desmarcó y recibió no puede rematar en el mismo turno', moved && passed && !canShoot,
+      'desmarque ' + (moved ? 'hecho' : 'no hecho') + ' · pase ' + (passed ? 'hecho' : 'no hecho') + ' · remate del 9 disponible: ' + (canShoot ? 'sí' : 'no') + ' · amenaza calculada antes: ' + pct(beforeRun.p) + ' (' + beforeRun.type + ')');
+    F.loadState(DIAG_CASES.length ? DIAG_CASES[0].state : ppState); var pu = F.purity();
+    check('El cálculo no cambia el estado ni consume azar del partido', pu.same && pu.randomCalls === 0, 'estado igual: ' + (pu.same ? 'sí' : 'no') + ' · tiradas consumidas: ' + pu.randomCalls);
+
+    group('3. Defendiendo, todas las jugadas se comparan al terminar el turno de la CPU');
+    var bState = layout([[t1(9), 13, 4], [t1(10), 12, 6], [t1(11), 13, 8]], t1(10), 1);
+    F.loadState(bState); var hz = await F.horizon(true);
+    var expected = hz.evaluate + 145 * hz.approx - 320 * hz.full + hz.press;
+    check('Rival por jugar con la pelota: evaluación general + 145 × amenaza aproximada − 320 × amenaza completa (+ presión)',
+      hz.holderTeam === 1 && Math.abs(hz.value - expected) < 1e-9,
+      'evaluación ' + hz.evaluate.toFixed(1) + ' · aproximada ' + pct(hz.approx) + ' · completa ' + pct(hz.full) + ' · presión ' + hz.press + ' → ' + expected.toFixed(1) + ' (búsqueda: ' + hz.value.toFixed(1) + ')');
+    // Presión con quite limpio: un defensor delante del poseedor (misma fila, del lado del arco) sí; un 2 de costado (30% de falta) no.
+    var frontState = layout([[t1(10), 12, 6], [t2(5), 10, 2], [t2(4), 13, 6]], t1(10), 1);
+    F.loadState(frontState); var hf = await F.horizon(true);
+    var sideState = layout([[t1(10), 12, 6], [t2(5), 10, 2], [t2(2), 12, 7]], t1(10), 1);
+    F.loadState(sideState); var hs = await F.horizon(true);
+    check('Presión: suma 12 puntos solo si un defensor puede hacer un quite de frente sin riesgo de falta', hf.press === 12 && hs.press === 0,
+      'defensor 4 de frente: ' + hf.press + ' puntos · defensor 2 de costado (falta 30%): ' + hs.press + ' puntos');
+    // Misma posición, pero la CPU recuperó la pelota (quite): se valora en el mismo momento, sin simular aún la respuesta.
+    var capState = layout([[t1(9), 13, 4], [t1(11), 13, 8], [t2(5), 12, 6], [t1(10), 10, 6]], t2(5), 1);
+    F.loadState(capState); var hc = await F.horizon(true);
+    check('Si la CPU recuperó la pelota, esa posición se valora en el mismo momento con la evaluación general',
+      hc.holderTeam === 2 && Math.abs(hc.value - hc.evaluate) < 1e-9, 'evaluación ' + hc.evaluate.toFixed(1) + ' · búsqueda ' + hc.value.toFixed(1));
+    F.loadState(bState); var ha = await F.horizon(false);
+    check('Fuera de una decisión defensiva la búsqueda es exactamente la de antes', Math.abs(ha.value - ha.prevValue) < 1e-9 && ha.intact,
+      'valor ' + ha.value.toFixed(1) + ' · búsqueda anterior ' + ha.prevValue.toFixed(1) + ' (misma semilla) · estado intacto: ' + (ha.intact ? 'sí' : 'no'));
+
+    group('4. Situaciones del diagnóstico: al terminar su turno la CPU deja menos peligro que v98 original');
+    var turnsLegal = true, turnDetails = [], msTurns = 0;
+    for (var dI = 0; dI < DIAG_CASES.length; dI++) {
+      var dc = DIAG_CASES[dI]; F.setDef(ALL); F.loadState(dc.state);
+      var rootsNow = F.roots(), origFirst = F.threatAfter(dc.origKey);
+      F.seed(1000 + dI); F.loadState(dc.state);
+      var ct = await F.cpuTurn(); msTurns += ct.ms;
+      var endT = F.threat().p;
+      turnsLegal = turnsLegal && ct.blocked === 0 && ct.invariant && ct.actions >= 1 && ct.actions <= 3;
+      turnDetails.push('esc. ' + dI + ': ' + ct.actions + ' acciones, bloqueadas ' + ct.blocked);
+      var okCase = endT <= dc.origEnd - 0.02;
+      var extra = '';
+      if (dc.kind === 'falta') {
+        // La falta entrega al rival un tiro libre y termina el turno de la CPU: su peligro esperado es al menos pFalta × tiro libre.
+        var floor = origFirst && origFirst.kind === 'duel' ? origFirst.pFoul * origFirst.tFoul : null;
+        var first = ct.keys[0] || '', risky = first.indexOf('duel|') === 0 && /\|(costado|atras)$/.test(first);
+        okCase = okCase && floor !== null && endT <= floor - 0.02 && !risky;
+        extra = ' · disputa original: falta ' + (origFirst ? Math.round(origFirst.pFoul * 100) : '?') + '%, tiro libre ' + pct(origFirst && origFirst.tFoul) + ' → peligro esperado ≥ ' + pct(floor);
+      }
+      check(dc.name, okCase, 'antes: ' + dc.origSeq.join(' → ') + ' → amenaza ' + pct(dc.origEnd) + ' · ahora: ' + ct.keys.join(' → ') + ' → amenaza ' + pct(endT) + extra +
+        ' · candidatas agregadas a la raíz: ' + (rootsNow.info && rootsNow.info.added.length ? rootsNow.info.added.join(', ') : 'ninguna'));
+    }
+
+    group('5. Turnos reales completos de la CPU');
+    check('Los ' + DIAG_CASES.length + ' turnos del grupo 4 usaron solo acciones legales, sin bloqueos y con el balón coherente', turnsLegal, turnDetails.join(' · ') + ' · ' + Math.round(msTurns / Math.max(1, DIAG_CASES.length)) + ' ms por turno');
+
+    group('6. Reglas y probabilidades sin cambios');
+    var names = Object.keys(RULE_HASHES), now = await F.ruleHashes(names);
+    var diff = names.filter(function (n) { return now[n] !== RULE_HASHES[n]; });
+    check('La huella de las ' + names.length + ' funciones de reglas coincide con 901c62b', diff.length === 0, diff.length ? 'distintas: ' + diff.join(', ') : names.join(', '));
+
+    var failed = results.filter(function (x) { return !x.ok; }).length;
+    finish(failed === 0, results.length - failed, failed);
+  }
+  function finish(ok, passed, failed, error) {
+    var st = document.getElementById('state');
+    st.textContent = ok ? 'CORRECTO' : 'FALLA'; st.className = 'pill ' + (ok ? 'ok' : 'bad');
+    document.getElementById('totals').textContent = error ? 'Error: ' + error : passed + ' comprobaciones correctas, ' + failed + ' con falla';
+    document.title = (ok ? 'OK · ' : 'FALLA · ') + document.title;
+    window.__FU_REGRESSION_RESULT = { ok: ok, passed: passed, failed: failed, error: error || null, results: results };
+  }
+  window.addEventListener('load', function () { run().catch(function (e) { finish(false, results.filter(function (x) { return x.ok; }).length, results.filter(function (x) { return !x.ok; }).length + 1, String(e && e.message || e)); }); });
+})();
+</script>
+</body>
+</html>
