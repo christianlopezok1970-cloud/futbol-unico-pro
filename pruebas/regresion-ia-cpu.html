@@ -64,7 +64,8 @@
       cuando las mejoras están apagadas, ajuste de riesgo según marcador y tiempo, valor esperado de los remates con la
       probabilidad del motor, pases y disputas por valor esperado, anticipación de la amenaza inmediata más peligrosa del rival, variedad solo con la pelota y entre opciones casi iguales,
       turnos reales completos sin jugadas bloqueadas y huella de las funciones de reglas idéntica a 901c62b (no se cambió
-      ninguna regla ni probabilidad). El almacenamiento queda aislado en memoria.</p>
+      ninguna regla ni probabilidad). La defensa de la fase 3 se desactiva en esta página y tiene su propia prueba
+      (regresion-defensa-cpu.html). El almacenamiento queda aislado en memoria.</p>
     <section id="summary"><span class="pill run" id="state">EJECUTANDO</span><strong id="totals">Cargando el motor…</strong><span id="v98"></span></section>
     <table>
       <thead><tr><th>Prueba</th><th>Resultado</th><th>Detalle</th></tr></thead>
@@ -120,6 +121,9 @@ var ANTICIPATION_CASES=[{"state":{"p":[[0,0,5],[1,2,2],[2,2,4],[3,1,7],[4,3,10],
     }
     window.__fuTest = {
       v98: typeof fuV98Ai !== 'undefined',
+      // Esta página prueba la fase 2 por separado: la defensa de la fase 3 (si está instalada) se desactiva aquí
+      // y se verifica en pruebas/regresion-defensa-cpu.html.
+      phase3: typeof fuV98Def !== 'undefined' ? (fuV98Def.enabled = false, 'desactivada en esta página') : 'no instalada',
       loadState: loadState, fullState: fullState, invariant: invariant,
       busy: function () { return { anim: anim && !goalCelebrationActive, searching: cpuSearching, turn: turn, clock: matchClockActions }; },
       id: function (t, n) { var z = p.find(function (y) { return y.t === t && y.n === n; }); return z ? z.id : null; },
@@ -204,7 +208,7 @@ var ANTICIPATION_CASES=[{"state":{"p":[[0,0,5],[1,2,2],[2,2,4],[3,1,7],[4,3,10],
     if (window.__fuStorageIsolated !== true || iframe.contentWindow.__fuStorageIsolated !== true)
       throw new Error('No se pudo aislar el almacenamiento del navegador; la prueba no se ejecutó para no modificar datos guardados.');
     F = iframe.contentWindow.__fuTest;
-    document.getElementById('v98').textContent = 'IA v98 instalada: ' + (F.v98 ? 'sí' : 'no');
+    document.getElementById('v98').textContent = 'IA v98 instalada: ' + (F.v98 ? 'sí' : 'no') + ' · defensa fase 3: ' + F.phase3;
     if (!F.v98) throw new Error('Esta versión de app.js no tiene la IA v98.');
     F.fast(); await sleep(300);
     var base = F.fullState();

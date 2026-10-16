@@ -104,6 +104,8 @@
 // comenzar cada turno del Equipo 1 con la pelota desde la columna 5. Se eligieron 24 cubriendo zona (medio, ataque,
 // área), carril (centro, banda) y amenaza inicial (t0, probabilidad de gol de la mejor secuencia del turno).
 // Formato: p = [id, columna, fila]; ids 0–10 Equipo 1, 11–21 Equipo 2 (CPU), en el orden de FORMATION.
+// Las posiciones 25–36 empiezan con la CPU con la pelota y por mover (generadas con &equipo=2), para medir su ataque:
+// 2 por zona (propia, medio, ataque) y carril (centro, banda).
 var SCENARIOS = [
 {"id":1,"zone":"medio-centro","origin":"directo-p0-a18","t0":0,"state":{"p":[[0,0,5],[1,2,2],[2,2,5],[3,2,6],[4,3,7],[5,6,5],[6,8,5],[7,5,9],[8,8,2],[9,5,1],[10,8,9],[11,17,5],[12,15,2],[13,15,4],[14,14,5],[15,15,8],[16,10,5],[17,9,5],[18,12,9],[19,7,0],[20,11,1],[21,9,9]],"ball":{"c":8,"r":5,"owner":6},"turn":1,"actionNo":1,"played":[],"lastPlayedId":null,"kickoff":false,"restartPassOnlyId":null,"freeKickRequiredId":null,"freeKickAwardedTeam":null,"score":[0,0],"clock":60}},
 {"id":2,"zone":"medio-centro","origin":"conservador-p4-a136","t0":0,"state":{"p":[[0,0,5],[1,2,2],[2,2,4],[3,2,6],[4,2,8],[5,6,5],[6,8,5],[7,5,9],[8,8,2],[9,5,1],[10,8,10],[11,17,5],[12,15,2],[13,14,5],[14,15,6],[15,15,8],[16,10,5],[17,8,4],[18,12,9],[19,9,2],[20,12,1],[21,9,8]],"ball":{"c":6,"r":5,"owner":5},"turn":1,"actionNo":1,"played":[],"lastPlayedId":null,"kickoff":false,"restartPassOnlyId":null,"freeKickRequiredId":null,"freeKickAwardedTeam":null,"score":[0,0],"clock":60}},
@@ -128,7 +130,19 @@ var SCENARIOS = [
 {"id":21,"zone":"area-banda","origin":"conservador-p0-a156","t0":0.0313,"state":{"p":[[0,0,4],[1,2,2],[2,3,5],[3,2,7],[4,3,7],[5,6,7],[6,9,6],[7,13,10],[8,6,0],[9,14,2],[10,6,9],[11,17,5],[12,16,7],[13,14,4],[14,14,9],[15,13,9],[16,8,6],[17,5,5],[18,5,9],[19,5,2],[20,10,5],[21,8,9]],"ball":{"c":13,"r":10,"owner":7},"turn":1,"actionNo":1,"played":[],"lastPlayedId":null,"kickoff":false,"restartPassOnlyId":null,"freeKickRequiredId":null,"freeKickAwardedTeam":null,"score":[0,0],"clock":60}},
 {"id":22,"zone":"area-banda","origin":"agresivo-p3-a75","t0":0.0785,"state":{"p":[[0,0,5],[1,6,1],[2,3,4],[3,2,6],[4,2,8],[5,7,0],[6,10,3],[7,5,9],[8,13,1],[9,9,1],[10,8,9],[11,17,5],[12,14,2],[13,16,3],[14,14,6],[15,15,8],[16,10,4],[17,6,5],[18,11,8],[19,8,1],[20,5,0],[21,6,8]],"ball":{"c":13,"r":1,"owner":8},"turn":1,"actionNo":1,"played":[],"lastPlayedId":null,"kickoff":false,"restartPassOnlyId":null,"freeKickRequiredId":null,"freeKickAwardedTeam":null,"score":[0,0],"clock":60}},
 {"id":23,"zone":"area-banda","origin":"directo-p0-a88","t0":0.1311,"state":{"p":[[0,0,5],[1,2,2],[2,3,5],[3,3,6],[4,4,9],[5,6,5],[6,10,5],[7,17,9],[8,9,2],[9,15,3],[10,13,10],[11,17,5],[12,15,2],[13,17,7],[14,15,8],[15,17,8],[16,10,3],[17,6,8],[18,11,5],[19,7,0],[20,10,2],[21,9,8]],"ball":{"c":17,"r":9,"owner":7},"turn":1,"actionNo":1,"played":[],"lastPlayedId":null,"kickoff":false,"restartPassOnlyId":null,"freeKickRequiredId":null,"freeKickAwardedTeam":null,"score":[0,0],"clock":60}},
-{"id":24,"zone":"area-banda","origin":"directo-p0-a94","t0":0.2428,"state":{"p":[[0,0,5],[1,2,2],[2,3,5],[3,3,6],[4,4,9],[5,6,5],[6,9,6],[7,17,10],[8,9,2],[9,15,5],[10,13,10],[11,17,5],[12,16,4],[13,17,7],[14,15,8],[15,17,9],[16,10,3],[17,6,8],[18,13,7],[19,7,0],[20,10,2],[21,9,8]],"ball":{"c":17,"r":10,"owner":7},"turn":1,"actionNo":1,"played":[],"lastPlayedId":null,"kickoff":false,"restartPassOnlyId":null,"freeKickRequiredId":null,"freeKickAwardedTeam":null,"score":[0,0],"clock":60}}
+{"id":24,"zone":"area-banda","origin":"directo-p0-a94","t0":0.2428,"state":{"p":[[0,0,5],[1,2,2],[2,3,5],[3,3,6],[4,4,9],[5,6,5],[6,9,6],[7,17,10],[8,9,2],[9,15,5],[10,13,10],[11,17,5],[12,16,4],[13,17,7],[14,15,8],[15,17,9],[16,10,3],[17,6,8],[18,13,7],[19,7,0],[20,10,2],[21,9,8]],"ball":{"c":17,"r":10,"owner":7},"turn":1,"actionNo":1,"played":[],"lastPlayedId":null,"kickoff":false,"restartPassOnlyId":null,"freeKickRequiredId":null,"freeKickAwardedTeam":null,"score":[0,0],"clock":60}},
+{"id":25,"zone":"cpu-propia-centro","origin":"agresivo-p0-a67","t0":0,"state":{"p":[[0,0,5],[1,2,2],[2,2,4],[3,2,6],[4,2,8],[5,6,5],[6,9,6],[7,5,9],[8,8,2],[9,8,1],[10,10,8],[11,17,5],[12,15,2],[13,15,4],[14,14,6],[15,15,8],[16,12,5],[17,9,5],[18,12,10],[19,9,2],[20,12,1],[21,9,10]],"ball":{"c":14,"r":6,"owner":14},"turn":2,"actionNo":1,"played":[],"lastPlayedId":null,"kickoff":false,"restartPassOnlyId":null,"freeKickRequiredId":null,"freeKickAwardedTeam":null,"score":[0,0],"clock":60}},
+{"id":26,"zone":"cpu-propia-centro","origin":"directo-p1-a157","t0":0.2317,"state":{"p":[[0,1,2],[1,2,4],[2,2,3],[3,1,3],[4,3,6],[5,4,1],[6,12,5],[7,6,9],[8,10,2],[9,13,1],[10,9,6],[11,17,5],[12,13,4],[13,14,0],[14,14,9],[15,11,6],[16,8,6],[17,4,5],[18,0,6],[19,5,2],[20,2,0],[21,4,7]],"ball":{"c":11,"r":6,"owner":15},"turn":2,"actionNo":1,"played":[],"lastPlayedId":null,"kickoff":false,"restartPassOnlyId":null,"freeKickRequiredId":null,"freeKickAwardedTeam":null,"score":[0,0],"clock":60}},
+{"id":27,"zone":"cpu-propia-banda","origin":"directo-p0-a154","t0":0,"state":{"p":[[0,0,5],[1,2,2],[2,3,4],[3,2,6],[4,2,8],[5,6,4],[6,8,5],[7,5,9],[8,9,1],[9,5,1],[10,8,8],[11,17,5],[12,13,0],[13,17,4],[14,15,6],[15,15,8],[16,12,5],[17,9,5],[18,12,9],[19,9,2],[20,12,1],[21,9,8]],"ball":{"c":13,"r":0,"owner":12},"turn":2,"actionNo":1,"played":[],"lastPlayedId":null,"kickoff":false,"restartPassOnlyId":null,"freeKickRequiredId":null,"freeKickAwardedTeam":null,"score":[0,0],"clock":60}},
+{"id":28,"zone":"cpu-propia-banda","origin":"directo-p1-a163","t0":0.1919,"state":{"p":[[0,1,2],[1,2,6],[2,2,5],[3,1,3],[4,3,6],[5,4,1],[6,12,5],[7,6,9],[8,10,2],[9,13,1],[10,10,7],[11,17,5],[12,13,4],[13,14,0],[14,14,9],[15,11,8],[16,8,6],[17,4,5],[18,0,9],[19,5,2],[20,2,0],[21,4,9]],"ball":{"c":11,"r":8,"owner":15},"turn":2,"actionNo":1,"played":[],"lastPlayedId":null,"kickoff":false,"restartPassOnlyId":null,"freeKickRequiredId":null,"freeKickAwardedTeam":null,"score":[0,0],"clock":60}},
+{"id":29,"zone":"cpu-medio-centro","origin":"directo-p0-a9","t0":0,"state":{"p":[[0,0,5],[1,2,2],[2,2,5],[3,2,6],[4,2,8],[5,6,4],[6,7,5],[7,5,9],[8,8,2],[9,5,1],[10,8,9],[11,17,5],[12,15,2],[13,15,4],[14,15,6],[15,15,8],[16,11,5],[17,8,5],[18,12,9],[19,9,0],[20,12,1],[21,9,8]],"ball":{"c":8,"r":5,"owner":17},"turn":2,"actionNo":1,"played":[],"lastPlayedId":null,"kickoff":false,"restartPassOnlyId":null,"freeKickRequiredId":null,"freeKickAwardedTeam":null,"score":[0,0],"clock":60}},
+{"id":30,"zone":"cpu-medio-centro","origin":"conservador-p2-a157","t0":0.238,"state":{"p":[[0,1,5],[1,1,1],[2,2,0],[3,1,3],[4,2,7],[5,8,5],[6,8,4],[7,6,6],[8,6,3],[9,6,1],[10,10,7],[11,17,5],[12,12,2],[13,12,4],[14,14,5],[15,13,8],[16,3,4],[17,4,7],[18,7,0],[19,3,0],[20,9,4],[21,7,8]],"ball":{"c":9,"r":4,"owner":20},"turn":2,"actionNo":1,"played":[],"lastPlayedId":null,"kickoff":false,"restartPassOnlyId":null,"freeKickRequiredId":null,"freeKickAwardedTeam":null,"score":[0,0],"clock":60}},
+{"id":31,"zone":"cpu-medio-banda","origin":"agresivo-p0-a15","t0":0,"state":{"p":[[0,0,5],[1,2,2],[2,2,4],[3,2,6],[4,2,8],[5,7,5],[6,9,6],[7,6,9],[8,8,2],[9,7,1],[10,7,9],[11,17,5],[12,15,2],[13,15,4],[14,15,6],[15,15,8],[16,11,5],[17,9,5],[18,12,9],[19,9,0],[20,10,2],[21,7,10]],"ball":{"c":7,"r":10,"owner":21},"turn":2,"actionNo":1,"played":[],"lastPlayedId":null,"kickoff":false,"restartPassOnlyId":null,"freeKickRequiredId":null,"freeKickAwardedTeam":null,"score":[0,0],"clock":60}},
+{"id":32,"zone":"cpu-medio-banda","origin":"conservador-p0-a61","t0":0.3736,"state":{"p":[[0,0,5],[1,3,3],[2,1,5],[3,2,6],[4,4,9],[5,6,6],[6,8,5],[7,9,10],[8,6,2],[9,7,1],[10,7,9],[11,17,5],[12,12,2],[13,14,4],[14,14,7],[15,13,7],[16,9,4],[17,4,4],[18,7,8],[19,2,5],[20,7,2],[21,7,10]],"ball":{"c":7,"r":10,"owner":21},"turn":2,"actionNo":1,"played":[],"lastPlayedId":null,"kickoff":false,"restartPassOnlyId":21,"freeKickRequiredId":null,"freeKickAwardedTeam":null,"score":[0,0],"clock":60}},
+{"id":33,"zone":"cpu-ataque-centro","origin":"directo-p5-a39","t0":0.0796,"state":{"p":[[0,0,5],[1,2,4],[2,4,4],[3,4,5],[4,2,8],[5,5,6],[6,8,5],[7,5,9],[8,8,2],[9,5,1],[10,9,9],[11,17,5],[12,14,0],[13,15,4],[14,15,6],[15,15,8],[16,11,6],[17,5,4],[18,11,9],[19,9,2],[20,9,0],[21,7,9]],"ball":{"c":5,"r":4,"owner":17},"turn":2,"actionNo":1,"played":[],"lastPlayedId":null,"kickoff":false,"restartPassOnlyId":null,"freeKickRequiredId":null,"freeKickAwardedTeam":null,"score":[0,0],"clock":60}},
+{"id":34,"zone":"cpu-ataque-centro","origin":"agresivo-p1-a156","t0":0.5744,"state":{"p":[[0,0,4],[1,1,4],[2,2,1],[3,0,10],[4,1,5],[5,5,5],[6,14,2],[7,5,9],[8,13,0],[9,6,2],[10,7,9],[11,17,5],[12,14,0],[13,14,5],[14,13,5],[15,13,10],[16,0,0],[17,5,10],[18,0,5],[19,0,1],[20,4,5],[21,1,8]],"ball":{"c":4,"r":5,"owner":20},"turn":2,"actionNo":1,"played":[],"lastPlayedId":null,"kickoff":false,"restartPassOnlyId":null,"freeKickRequiredId":null,"freeKickAwardedTeam":null,"score":[0,0],"clock":60}},
+{"id":35,"zone":"cpu-ataque-banda","origin":"agresivo-p0-a21","t0":0,"state":{"p":[[0,0,5],[1,2,2],[2,1,5],[3,1,6],[4,2,8],[5,7,5],[6,9,6],[7,4,9],[8,8,2],[9,7,1],[10,7,9],[11,17,5],[12,15,2],[13,15,4],[14,15,6],[15,13,10],[16,11,5],[17,9,5],[18,10,9],[19,9,0],[20,10,2],[21,5,10]],"ball":{"c":5,"r":10,"owner":21},"turn":2,"actionNo":1,"played":[],"lastPlayedId":null,"kickoff":false,"restartPassOnlyId":null,"freeKickRequiredId":null,"freeKickAwardedTeam":null,"score":[0,0],"clock":60}},
+{"id":36,"zone":"cpu-ataque-banda","origin":"directo-p1-a133","t0":0.4391,"state":{"p":[[0,0,1],[1,2,1],[2,1,4],[3,0,4],[4,2,5],[5,4,1],[6,13,4],[7,6,9],[8,10,2],[9,13,1],[10,9,8],[11,17,5],[12,15,2],[13,14,0],[14,14,9],[15,14,6],[16,9,5],[17,4,4],[18,0,5],[19,5,0],[20,2,0],[21,4,8]],"ball":{"c":2,"r":0,"owner":20},"turn":2,"actionNo":1,"played":[],"lastPlayedId":null,"kickoff":false,"restartPassOnlyId":null,"freeKickRequiredId":null,"freeKickAwardedTeam":null,"score":[0,0],"clock":60}}
 ];
 (function () {
   'use strict';
@@ -581,6 +595,8 @@ var SCENARIOS = [
   // ---------------- modo generar: posiciones iniciales a partir de partidos rápidos ----------------
   async function generate(params) {
     var games = Number(params.get('partidos') || 3), maxActions = Number(params.get('acciones') || 150), styles = (params.get('rivales') || 'conservador,directo,agresivo').split(',');
+    // ?equipo=2 guarda posiciones con la CPU con la pelota al empezar su turno (para medir su ataque).
+    var team = Number(params.get('equipo') || 1);
     var out = [];
     for (var gi = 0; gi < games; gi++) for (var si = 0; si < styles.length; si++) {
       var style = styles[si];
@@ -591,9 +607,13 @@ var SCENARIOS = [
         if (s.goal) { F.continueGoal(); await waitIdle(5000); continue; }
         if (s.finished || s.halftime) break;
         F.reseed(segSeed, k);
-        if (s.turn === 1 && s.actionNo === 1 && s.holderTeam === 1 && s.ball.c >= 5 && !s.freeKick && !F.state().kickoff) {
+        if (team === 1 && s.turn === 1 && s.actionNo === 1 && s.holderTeam === 1 && s.ball.c >= 5 && !s.freeKick && !F.state().kickoff) {
           var th = F.threat(1, 3, []);
           out.push({ game: gi, style: style, k: k, state: F.state(), t: Number(th.p.toFixed(4)), seq: th.seq });
+        }
+        if (team === 2 && s.turn === 2 && s.actionNo === 1 && s.holderTeam === 2 && !s.freeKick && !F.state().kickoff) {
+          var th2 = F.threat(2, 3, []);
+          out.push({ game: gi, style: style, k: k, state: F.state(), t: Number(th2.p.toFixed(4)), seq: th2.seq });
         }
         var rng = rngFrom(hash2(segSeed, 'g' + k)), cands = F.candidates(), rejected = {}, res = null, pick = null;
         for (var tries = 0; tries < 8; tries++) {
@@ -700,6 +720,7 @@ var SCENARIOS = [
     if (params.get('mejoras') === 'no' && fl.def) F.flags({ enabled: false });
     if (params.get('mejoras') === 'si' && fl.def) F.flags({ enabled: true });
     if (params.get('fase3') === 'evaluacion' && fl.def) F.flags({ enabled: true, roots: false });
+    if (params.get('presion') && fl.def) F.flags({ pressBonus: Number(params.get('presion')) });
     document.getElementById('totals').textContent = SCENARIOS.length + ' posiciones iniciales disponibles.';
     document.getElementById('state').textContent = 'LISTO'; document.getElementById('state').className = 'pill ok';
     var modo = params.get('modo') || '';
