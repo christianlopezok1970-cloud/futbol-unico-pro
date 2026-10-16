@@ -2555,7 +2555,8 @@ const V98_DEF_PATCH = String.raw`
  //    así que la CPU no distinguía una cobertura buena de una mala y a veces elegía la que dejaba más peligro.
  //  · Selección: defendiendo, la raíz admitía solo dos movimientos elegidos por la heurística general; el movimiento
  //    que más reducía el peligro muchas veces no llegaba a compararse.
- //  · Faltas: la rama "falta" de una disputa se valoraba con una única muestra del tiro libre posterior.
+ //  · Faltas: la rama "falta" de una disputa se valoraba con una única muestra del tiro libre posterior; con el turno
+ //    rival valorado por valor esperado, una falta cerca del área cuesta lo que vale el tiro libre que concede.
  const fuV98Def={enabled:true,boundary:true,roots:true,rootExtra:3,rootMinGain:0.02};
  function fuV98DefOn(){return fuV98Def.enabled&&fuV98Ai.enabled;}
 
@@ -2607,7 +2608,7 @@ const V98_DEF_PATCH = String.raw`
  }
 
  // ======== Etapa 3a · evaluación: fin del turno de la CPU con la pelota en poder del rival ========
- // En ese nodo la búsqueda ya no sortea el turno rival: valora la posición con la amenaza inmediata completa
+ // Defendiendo, en ese nodo la búsqueda ya no sortea el turno rival: valora la posición con la amenaza inmediata completa
  // (valor esperado de la mejor secuencia del rival, con el valor de un gol que usa toda la búsqueda: 320 puntos)
  // en lugar de la amenaza aproximada de la evaluación general (145 × remate o un pase-remate). Así una cobertura que
  // baja la ocasión rival del 35% al 15% vale 64 puntos más, sin depender de la suerte de una tirada fija; y una falta
@@ -2619,19 +2620,32 @@ const V98_DEF_PATCH = String.raw`
   const full=fuV98DefThreat(holder.t).p;
   return value+145*ctx.threatAgainst*approx-320*ctx.goalAgainst*full;
  }
- let fuV98DefBoundaryCount=0;
+ // ======== Corrección 3c · mismo horizonte para todas las jugadas defensivas ========
+ // En el banco, la etapa 3a bajó las ocasiones concedidas pero también las recuperaciones (105 → 87; quites de frente
+ // 29 → 20): las líneas en que el rival conservaba la pelota se valoraban al terminar el turno de la CPU, y las líneas en
+ // que la CPU la recuperaba se valoraban después de simular la respuesta rival, así que recuperar quedaba subvalorado.
+ // Ahora, cuando la CPU decide defendiendo (el rival tiene la pelota), todas sus jugadas se comparan al terminar su
+ // turno: con la amenaza completa si el rival conserva la pelota y con la evaluación de la posición si la CPU la recuperó
+ // o quedó suelta. Las decisiones con la pelota propia o suelta conservan la búsqueda anterior sin cambios.
+ let fuV98DefBoundaryCount=0,fuV98DefRootDefensive=false;
  const fuV98DefPrevSearch=searchSequenceNode;
  async function fuV98DefSearchSequenceNode(depth,rootTeam,goalDiff,alpha,beta,ctx){
-  if(fuV98DefOn()&&fuV98Def.boundary&&rootTeam===CPU_TEAM&&turn!==rootTeam&&actionNo===1&&!kickoffPassRequired){
+  if(fuV98DefOn()&&fuV98Def.boundary&&fuV98DefRootDefensive&&rootTeam===CPU_TEAM&&turn!==rootTeam&&actionNo===1&&!kickoffPassRequired){
    const holder=owner();
-   if(holder&&holder.t===turn){
-    sequenceVisitedNodes++;ctx.nodes++;fuV98DefBoundaryCount++;
-    return {value:fuV98DefBoundaryValue(rootTeam,goalDiff,holder),pv:[]};
-   }
+   sequenceVisitedNodes++;ctx.nodes++;fuV98DefBoundaryCount++;
+   if(holder&&holder.t===turn)return {value:fuV98DefBoundaryValue(rootTeam,goalDiff,holder),pv:[]};
+   return {value:evaluateSequencePosition(rootTeam,goalDiff),pv:[]};
   }
   return fuV98DefPrevSearch(depth,rootTeam,goalDiff,alpha,beta,ctx);
  }
  searchSequenceNode=fuV98DefSearchSequenceNode;
+ // La decisión es defensiva si, al empezar a pensar, el rival tiene la pelota.
+ const fuV98DefPrevChoose=chooseCpuMove;
+ chooseCpuMove=async function(token){
+  const holder=owner(),prev=fuV98DefRootDefensive;
+  fuV98DefRootDefensive=!!(fuV98DefOn()&&holder&&holder.t!==CPU_TEAM);
+  try{return await fuV98DefPrevChoose(token);}finally{fuV98DefRootDefensive=prev;}
+ };
 
  // ======== Etapa 3b · selección: en defensa la raíz incluye los movimientos que más reducen la amenaza ========
  // Se conservan las mismas candidatas de antes (heurística general) y se agregan hasta tres movimientos legales de
