@@ -2557,7 +2557,7 @@ const V98_DEF_PATCH = String.raw`
  //    que más reducía el peligro muchas veces no llegaba a compararse.
  //  · Faltas: la rama "falta" de una disputa se valoraba con una única muestra del tiro libre posterior; con el turno
  //    rival valorado por valor esperado, una falta cerca del área cuesta lo que vale el tiro libre que concede.
- const fuV98Def={enabled:true,boundary:true,roots:true,rootExtra:3,rootMinGain:0.02};
+ const fuV98Def={enabled:true,boundary:true,roots:true,rootExtra:3,rootMinGain:0.02,press:true,pressBonus:12};
  function fuV98DefOn(){return fuV98Def.enabled&&fuV98Ai.enabled;}
 
  // ---- Amenaza inmediata: valor esperado de la mejor secuencia de gol del equipo que empieza su turno con la pelota ----
@@ -2618,7 +2618,24 @@ const V98_DEF_PATCH = String.raw`
   const ctx=fuV98DefRisk();
   const approx=estimateAttackingThreat(p,holder.id).probability;
   const full=fuV98DefThreat(holder.t).p;
-  return value+145*ctx.threatAgainst*approx-320*ctx.goalAgainst*full;
+  return value+145*ctx.threatAgainst*approx-320*ctx.goalAgainst*full+fuV98DefPressValue(holder);
+ }
+ // ======== Corrección 3d · presión con quite limpio ========
+ // En el banco, con 3a–3c la CPU recuperó menos pelotas con quites de frente (20 → 10 quites limpios): cuando tenía uno
+ // disponible lo usaba más que antes (4 de 5 decisiones frente a 6 de 12), pero se le presentaban la mitad de veces,
+ // porque cerraba líneas en lugar de quedar delante del poseedor. La amenaza de un turno no valora que, con un defensor
+ // de frente, el poseedor tenga que escapar o pasar en su turno o perder la pelota en el siguiente. Si al terminar el
+ // turno de la CPU un defensor puede hacer un quite de frente ejecutable y sin riesgo de falta (duelCandidatePlan del
+ // motor), la posición suma 12 puntos (unos 4 puntos de amenaza): desempata entre coberturas parecidas sin imponerse a
+ // una reducción real del peligro.
+ function fuV98DefPressValue(holder){
+  if(!fuV98Def.press||!holder||holder.n===1)return 0;
+  for(const z of p){
+   if(z.t===holder.t||z.n===1||cheb(z,holder)!==1)continue;
+   const plan=duelCandidatePlan(z,holder);
+   if(plan&&plan.outcome==='frente'&&plan.type==='frente')return fuV98Def.pressBonus;
+  }
+  return 0;
  }
  // ======== Corrección 3c · mismo horizonte para todas las jugadas defensivas ========
  // En el banco, la etapa 3a bajó las ocasiones concedidas pero también las recuperaciones (105 → 87; quites de frente
